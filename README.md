@@ -1,5 +1,7 @@
 # ⚡ Argon Control Center (`argon-config-rs`)
 
+[![CI](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml)
+
 Configurador desktop em **Rust + egui/eframe** para **Raspberry Pi** com gabinetes **Argon40** (Argon ONE, ONE V3, EON). Inspirado nos painéis Gigabyte AORUS e no KDE System Monitor: monitoramento em tempo real, curva da ventoinha, overclock, recursos de hardware, laboratório de GPIO e controle do serviço `argononed`.
 
 > 🇺🇸 **English summary** — Native Linux desktop app (Rust/egui) to monitor and configure a Raspberry Pi in an Argon40 case: live telemetry, fan curve editor, board-aware overclocking (Pi 3/4/5), `config.txt` hardware toggles, GPIO logic analyzer + serial/I2C console and `argononed` service control. UI in Portuguese and English (`--en`), colors follow your desktop theme (KDE, GNOME, XFCE, any WM with xdg-desktop-portal). See [Requirements](#-requisitos) and [Build & run](#-compilar-e-executar).
@@ -55,7 +57,7 @@ Gabinetes reconhecidos: **Argon ONE (Pi 4)**, **Argon ONE V3 (Pi 5)**, **Argon E
 
 ### 🎨 Interface
 - **Temas:** ⚡ KDE Compacto (tudo numa tela), 🖥 KDE Completo (sidebar + donuts + gráficos), 🎨 Breeze + v1 e 🎮 AORUS v1.
-- **Cores do sistema** (`src/system_colors.rs`): KDE (`kdeglobals`), GNOME/Cinnamon/MATE/XFCE/Budgie (tema GTK e cor de destaque), qualquer WM via xdg-desktop-portal. Suporta tema claro e escuro, garante contraste do texto e acompanha a troca de tema ao vivo.
+- **Cores do sistema** (`src/system_colors.rs`): KDE (`kdeglobals`), GNOME/Cinnamon/MATE/XFCE/Budgie (tema GTK e cor de destaque), qualquer WM via xdg-desktop-portal. Suporta tema claro e escuro em todas as abas (textos e destaques são ajustados para manter contraste mínimo WCAG) e acompanha a troca de tema ao vivo. O tema 🎮 AORUS mantém o visual neon fixo.
 - **Idiomas:** Português (padrão) e Inglês, com troca na interface.
 - Tooltips explicativos em todos os controles, layout responsivo (janela mínima 480×400).
 
@@ -140,12 +142,14 @@ cargo build --release
 | `--status`, `-s` | imprime telemetria, placa/gabinete detectados e overclock atual no terminal |
 | `--en`, `--lang=en` | abre a interface em inglês |
 
-### Atalho no menu
-Ajuste `Exec`/`Path` em `argon-control-center.desktop` para o caminho do binário e copie:
+### Instalar (binário + atalho no menu)
 
 ```bash
-cp argon-control-center.desktop ~/.local/share/applications/
+mise run install        # compila e instala em ~/.local/bin + ~/.local/share/applications
+mise run uninstall      # remove
 ```
+
+Sem `mise`: `scripts/install.sh` (ou `scripts/install.sh --uninstall`). Para instalar para todos os usuários: `PREFIX=/usr/local sudo -E scripts/install.sh`.
 
 ---
 
@@ -153,7 +157,7 @@ cp argon-control-center.desktop ~/.local/share/applications/
 
 ```bash
 mise run check                                         # cargo test
-cargo clippy && cargo fmt --check                      # lint e formatação
+mise run lint                                          # fmt --check + clippy -D warnings (igual à CI)
 cargo test print_board -- --ignored --nocapture        # diagnóstico da placa detectada
 cargo test print_detected -- --ignored --nocapture     # diagnóstico das cores do sistema
 ```
@@ -172,6 +176,8 @@ cargo test print_detected -- --ignored --nocapture     # diagnóstico das cores 
 | `src/theme.rs` | estilos, donuts e gráficos |
 | `src/system_colors.rs` | paleta do desktop (KDE/GTK/portal) |
 | `src/i18n.rs` | textos PT-BR / EN-US |
+| `scripts/install.sh` | instalação/remoção do binário e do atalho |
+| `.github/workflows/ci.yml` | CI: fmt, clippy e testes em x86_64 e ARM64 |
 | `src/privileged.rs` | elevação via Polkit |
 
 ---
