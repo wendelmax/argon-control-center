@@ -4,6 +4,7 @@ pub mod i18n;
 pub mod overclock;
 pub mod privileged;
 pub mod telemetry;
+pub mod theme;
 pub mod ui;
 
 use crate::argon::{load_fan_curve, FanPreset, CPU_FAN_CONF};
