@@ -1,230 +1,328 @@
-# ⚡ Argon Control Center (`argon-config-rs`)
+<div align="center">
+
+# Argon Control Center
+
+**A native Linux control center for Raspberry Pi computers in Argon40 cases.**
+
+Monitor the system, tune the fan curve, overclock safely and manage hardware features from one desktop application.
 
 [![CI](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml)
 [![Packages](https://github.com/wendelmax/argon-config-rs/actions/workflows/package.yml/badge.svg)](https://github.com/wendelmax/argon-config-rs/actions/workflows/package.yml)
+[![Release](https://img.shields.io/github/v/release/wendelmax/argon-config-rs?sort=semver)](https://github.com/wendelmax/argon-config-rs/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Linux%20arm64%20%7C%20x86__64-informational)
+![Rust](https://img.shields.io/badge/rust-stable-orange)
 
-Native Linux desktop app written in **Rust + egui/eframe** to monitor and configure a **Raspberry Pi** in an **Argon40** case (Argon ONE, ONE V3, EON). Inspired by the Gigabyte AORUS control panels and the KDE System Monitor: live telemetry, fan curve editor, board-aware overclocking, `config.txt` hardware toggles, a GPIO lab and `argononed` service control.
+[Installation](#installation) · [Usage](#usage) · [Documentation](#configuration) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/wendelmax/argon-config-rs/releases)
 
-The interface is in **English** by default, with **Brazilian Portuguese** available as an alternative (language switch in the header, or `--pt`).
+</div>
 
 ---
 
-## ✨ Features
+## Table of contents
 
-### 🔎 Automatic board and case detection
-Done at startup (`src/board.rs`), with no manual configuration:
+- [Overview](#overview)
+- [Features](#features)
+- [Compatibility](#compatibility)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Permissions](#permissions)
+- [Building from source](#building-from-source)
+- [Development](#development)
+- [Release process](#release-process)
+- [Project structure](#project-structure)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
-| What | How |
-|---|---|
-| Pi model, SoC and RAM | revision code (`/proc/cpuinfo` or `/proc/device-tree/system/linux,revision`), `/proc/device-tree/model` and `compatible` |
-| Argon case | installed Argon scripts (`/etc/argon/*`) + I2C scan on bus 1: MCU `0x1a`, OLED `0x3c`, RTC `0x51` (EON), BLSTR DAC `0x4d` |
-| Overclock profile | presets and control limits per SoC |
+## Overview
 
-Supported boards and overclock profiles (MHz):
+Argon Control Center is a desktop application written in Rust with [egui](https://github.com/emilk/egui). It brings together the tasks that are otherwise spread across `config.txt`, the Argon40 scripts, `systemctl` and sysfs:
 
-| Board | SoC | Eco | Stock | OC Gaming | Extreme |
+- live telemetry with history charts;
+- a graphical editor for the `argononed` fan curve;
+- overclocking presets matched to the detected board;
+- hardware toggles for `config.txt`;
+- a GPIO logic analyzer and a serial/I2C console.
+
+The board and the Argon case are detected automatically at startup, so presets and limits always match the hardware. The interface follows the desktop color scheme and is available in English and Brazilian Portuguese.
+
+## Features
+
+**Hardware detection**
+- Raspberry Pi model, SoC and memory decoded from the board revision code.
+- Argon case identified from the installed Argon40 scripts and an I2C scan (fan MCU `0x1a`, OLED `0x3c`, RTC `0x51`, BLSTR DAC `0x4d`).
+
+**Monitoring**
+- CPU frequency, governor and per-core load, SoC temperature with peak, fan duty, memory and swap, network throughput, disks and RAID arrays, and the 5 V under-voltage alarm.
+- 60-second history charts. Slow probes run on a worker thread so the interface stays responsive.
+
+**Fan control**
+- Drag-and-drop curve editor for the CPU (`/etc/argononed.conf`) and disk (`/etc/argononed-hdd.conf`) curves.
+- Silent, Standard, Performance and Full Speed profiles, plus an immediate manual override over I2C.
+
+**Overclocking**
+- Live changes without rebooting: governor, minimum and maximum frequency, and boost.
+- Firmware presets written to a managed block in `config.txt`. The rest of the file is preserved.
+- `over_voltage` on Raspberry Pi 3 and 4; `over_voltage_delta` on Raspberry Pi 5.
+
+**Hardware features**
+- I2C, SPI, I2S, onboard audio, UART, VC4 KMS, camera and display auto-detection.
+- Argon BLSTR DAC and IR receiver overlays, OLED settings and EEPROM power-supply limit.
+
+**GPIO and serial lab**
+- Live state of the 40-pin header: level, direction, pull and edge counters.
+- Serial monitor for UART and USB adapters, and I2C diagnostic commands.
+
+**Service management**
+- Start, stop, restart, enable and disable `argononed.service`, with an explanation of its role before it is stopped.
+
+**Interface**
+- Sidebar or top-tab navigation, system or AORUS color scheme, and three dashboard styles, all configurable in Settings.
+- Light and dark desktop themes on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, with enforced text contrast.
+- Interface scaling from 80% to 150%; layouts adapt to narrow windows.
+
+## Compatibility
+
+### Boards and overclocking profiles
+
+| Board | SoC | Eco | Stock | OC | Extreme |
 |---|---|---|---|---|---|
-| Pi 5 / 500 / CM5 | BCM2712 | 1800 | 2400 | 2800 (`over_voltage_delta=50000`) | 3000 / GPU 1000 (`over_voltage_delta=100000`) |
-| Pi 4 / 400 / CM4 | BCM2711 | 1500 | 1800 | 2000 / GPU 650 (`over_voltage=4`) | 2147 / GPU 750 (`over_voltage=6`) |
-| Pi 3 / Zero 2 W | BCM2837 | 1000 | 1400 | 1450 | 1500 |
+| Raspberry Pi 5, 500, CM5 | BCM2712 | 1800 MHz | 2400 MHz | 2800 MHz | 3000 MHz |
+| Raspberry Pi 4, 400, CM4 | BCM2711 | 1500 MHz | 1800 MHz | 2000 MHz | 2147 MHz |
+| Raspberry Pi 3, Zero 2 W | BCM2837 | 1000 MHz | 1400 MHz | 1450 MHz | 1500 MHz |
 
-Recognised cases: **Argon ONE (Pi 4)**, **Argon ONE V3 (Pi 5)**, **Argon EON**. The summary is shown in the sidebar/header (hover for full diagnostics) and by `--status`.
+Other Linux systems (ARM or x86_64) can run the monitoring features; Raspberry Pi specific features are disabled.
 
-### 📊 Monitoring
-- CPU (frequency, governor, per-core load), temperature with peak, fan (% PWM), RAM/swap, network RX/TX, disks and RAID arrays (`/proc/mdstat`), 5 V under-voltage alarm.
-- 60-second history charts (temperature, CPU, fan, frequency, RAM, network).
-- Slow probes (`df`, `systemctl`) run on a worker thread, so the UI never stutters.
+### Argon40 cases
 
-### 🌀 Smart Fan
-- Drag-and-drop curve editor for CPU (`/etc/argononed.conf`) and disks (`/etc/argononed-hdd.conf`).
-- Profiles: Silent, Standard (Argon default), Performance, Full Speed (100%) and Custom.
-- Immediate manual override over I2C (`0x1a`, register `0x80`).
+| Case | Board |
+|---|---|
+| Argon ONE, Argon ONE M.2 | Raspberry Pi 4 |
+| Argon ONE V3, Argon ONE V3 M.2 | Raspberry Pi 5 |
+| Argon EON | Raspberry Pi 4 |
 
-### 🔥 Overclocking
-- **Live (no reboot):** governor, min/max frequency and boost via `sysfs`.
-- **Firmware (`config.txt`):** presets from the table above plus `arm_freq`, `gpu_freq`, `over_voltage` (Pi 3/4) or `over_voltage_delta` (Pi 5), `temp_limit`, `arm_boost`, `force_turbo`. Changes go into a managed block (`# --- BEGIN ARGON AORUS CONTROL CENTER ---`); the rest of the file is preserved.
+A case is optional. Without one, fan control has no effect and everything else works.
 
-### 🛠 Hardware features
-- I2C, SPI, I2S, onboard audio, UART, VC4 KMS, camera/display auto-detect.
-- Argon BLSTR DAC (`dtoverlay=hifiberry-dacplus,slave`), IR receiver (`dtoverlay=gpio-ir,gpio_pin=23`).
-- Temperature unit (`/etc/argonunits.conf`), OLED (`/etc/argoneonoled.conf`), EEPROM (`PSU_MAX_CURRENT=5000`).
+### Distributions
 
-### 🔬 GPIO & Serial Lab
-- Live logic analyzer for the 40-pin header (level, direction, pull, edges).
-- Arduino-IDE-style console: serial (`/dev/ttyS0`, `/dev/ttyAMA0`, `/dev/ttyAMA10` on Pi 5, `/dev/ttyUSB*`, `/dev/ttyACM*`) and I2C commands (`scan`, `mcu`, `fan <0-100>`, `high/low <bcm>`).
-- **🔓 Unlock Direct Hardware Access** button: one Polkit prompt sets up groups and udev rules (see [Permissions](#-permissions)).
+Packaged for Debian, Ubuntu, Raspberry Pi OS, Armbian, Fedora and Arch Linux. Requires a Wayland or X11 session with OpenGL.
 
-### ⚙ Services
-- `argononed.service`: start, stop, restart, enable/disable at boot, with an explanation of what the service does before you stop it.
-
-### 🎨 Interface
-- **Themes:** ⚡ KDE Compact (everything on one screen), 🖥 KDE Full (sidebar + donuts + charts), 🎨 Breeze + v1 and 🎮 AORUS v1.
-- **System colors** (`src/system_colors.rs`): KDE (`kdeglobals`), GNOME/Cinnamon/MATE/XFCE/Budgie (GTK theme and accent color), any WM through xdg-desktop-portal. Light and dark schemes on every tab, with WCAG contrast guards; theme changes are picked up live. 🎮 AORUS keeps its fixed neon look.
-- **Languages:** English (default) and Português (Brasil).
-- Language, theme and last tab are remembered in `~/.config/argon-control-center/settings.json`.
-
-### 🔐 Safe system writes
-Privileged files are written through Polkit with the content passed on stdin (no predictable `/tmp` staging file), replaced atomically, and the previous version is kept as `<file>.argoncc.bak` (e.g. `/boot/firmware/config.txt.argoncc.bak`).
-
----
-
-## 📦 Installation
+## Installation
 
 ### Packages
-Every `v*` tag publishes packages on the [Releases](https://github.com/wendelmax/argon-config-rs/releases) page.
 
-| Distro | Package | Install |
-|---|---|---|
-| Debian, Ubuntu, Raspberry Pi OS, Armbian | `.deb` (arm64, amd64) | `sudo apt install ./argon-control-center_<ver>_arm64.deb` |
-| Fedora | `.rpm` (aarch64, x86_64) | `sudo dnf install ./argon-control-center-<ver>.rpm` |
-| Arch Linux / Arch Linux ARM | `PKGBUILD` (`packaging/arch`) | `makepkg -si` |
+Download the package for your distribution from the [latest release](https://github.com/wendelmax/argon-config-rs/releases/latest).
 
-Packages install the binary, the menu entry, the udev rules and the `i2c`/`gpio` groups, and load `i2c-dev` at boot. When installed with `sudo`, the user who ran `sudo` is added to the hardware groups automatically.
+| Distribution | Command |
+|---|---|
+| Debian, Ubuntu, Raspberry Pi OS, Armbian | `sudo apt install ./argon-control-center_<version>_arm64.deb` |
+| Fedora | `sudo dnf install ./argon-control-center-<version>-1.<arch>.rpm` |
+| Arch Linux (x86_64) | `sudo pacman -U ./argon-control-center-<version>-1-x86_64.pkg.tar.zst` |
+| Arch Linux ARM | build `packaging/arch/PKGBUILD` with `makepkg -si` |
 
-Build the packages yourself:
+The packages install the application, its menu entry and the hardware access rules (see [Permissions](#permissions)). Log out and back in once after installing.
 
-```bash
-packaging/debian/build-deb.sh                              # → dist/*.deb
-rpmbuild -bb packaging/rpm/argon-control-center.spec       # Fedora (source tarball in ~/rpmbuild/SOURCES)
-cd packaging/arch && makepkg -si                           # Arch
+Verify a download with:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-### From source (current user, no root)
+### Argon40 daemon (recommended)
 
-```bash
-git clone https://github.com/wendelmax/argon-config-rs.git
-cd argon-config-rs
-mise install            # Rust toolchain pinned in mise.toml
-mise run install        # builds and installs to ~/.local/bin + ~/.local/share/applications
-mise run uninstall      # removes it
-```
+Fan curves, the power button and the OLED display are handled by the official `argononed` service:
 
-Without `mise`: `scripts/install.sh` (or `scripts/install.sh --uninstall`). System-wide: `PREFIX=/usr/local sudo -E scripts/install.sh`. Then set up [permissions](#-permissions).
-
----
-
-## 📋 Requirements
-
-### Hardware
-- Raspberry Pi 3, 4, 400, CM4, 5, 500 or CM5. Other ARM/x86 Linux systems run the monitoring features without the Pi-specific ones.
-- An Argon40 case is optional: without it the fan tab has no effect; everything else works.
-
-### System
-- Linux with a **Wayland or X11** session and OpenGL (`vc4`/`v3d` driver on the Pi).
-- Tested on Armbian (Ubuntu 26.04) and Raspberry Pi OS; packaged for Debian/Ubuntu, Fedora and Arch.
-
-### Runtime tools
-
-| Tool | Used for | Debian/Ubuntu | Fedora | Arch |
-|---|---|---|---|---|
-| `pkexec` (Polkit) | writing `config.txt`, `/etc/argon*.conf`, service control | `pkexec` / `policykit-1` | `polkit` | `polkit` |
-| `i2cdetect`, `i2cget` | I2C scan and console | `i2c-tools` | `i2c-tools` | `i2c-tools` |
-| `gpioget`, `gpioset` | GPIO tools | `gpiod` | `libgpiod-utils` | `libgpiod` |
-| `pinctrl` | GPIO logic analyzer | `raspi-utils` | — | — |
-| `python3` + Argon scripts | fan override, IR, EEPROM | `python3-smbus` | `python3-smbus` | `i2c-tools` |
-
-### Build dependencies
-
-```bash
-# Debian / Ubuntu
-sudo apt install build-essential pkg-config libgl1-mesa-dev libxkbcommon-dev \
-  libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
-# Fedora
-sudo dnf install gcc pkgconf mesa-libGL-devel mesa-libEGL-devel libxkbcommon-devel wayland-devel libX11-devel
-# Arch
-sudo pacman -S --needed base-devel libglvnd libxkbcommon wayland libx11
-```
-
-Rust **stable** (edition 2021). The project pins it with [`mise`](https://mise.jdx.dev) (`mise.toml`); `rustup` works too.
-
-### Official Argon40 scripts (recommended)
-They install `argononed` (automatic fan curve, power button, OLED):
-
-```bash
+```sh
 curl https://download.argon40.com/argon1.sh | bash      # Argon ONE (Pi 4) and ONE V3 (Pi 5)
 curl https://download.argon40.com/argoneon.sh | bash    # Argon EON
 ```
 
----
+## Usage
 
-## 🔐 Permissions
+Launch **Argon Control Center** from the application menu, or run:
 
-| Feature | Needs |
+```sh
+argon-control-center
+```
+
+| Option | Description |
 |---|---|
-| Telemetry | nothing |
-| Writing system files, service control | Polkit password prompt (on demand) |
+| `--status`, `-s` | Print telemetry, detected hardware and the current overclock, then exit |
+| `--pt`, `--lang=pt` | Start in Brazilian Portuguese |
+| `--en`, `--lang=en` | Start in English |
+
+Example:
+
+```text
+$ argon-control-center --status
+=== ARGON CONTROL CENTER — TELEMETRY ===
+Board         : Raspberry Pi 4 Model B Rev 1.4
+Detected      : Pi 4 · BCM2711 · 8 GB · Argon ONE (Pi 4)
+CPU Temp      : 47.7 °C | Target Fan: 0% | Argononed: active
+```
+
+## Configuration
+
+Preferences are changed on the **Settings** page and stored in `~/.config/argon-control-center/settings.json`.
+
+| Setting | Options |
+|---|---|
+| Navigation | Sidebar, Top tabs |
+| Colors | Follow system, AORUS |
+| Dashboard | Compact, Charts, Gauges |
+| Interface scale | 80% to 150% |
+| Language | English, Português (Brasil) |
+| Temperature unit | °C, °F (the case OLED unit is applied separately) |
+
+System files written by the application:
+
+| File | Purpose |
+|---|---|
+| `/boot/firmware/config.txt` (or `/boot/config.txt`) | Overclocking and hardware overlays |
+| `/etc/argononed.conf`, `/etc/argononed-hdd.conf` | Fan curves |
+| `/etc/argonunits.conf` | Temperature unit used by `argononed` and the OLED |
+| `/etc/argoneonoled.conf` | OLED display settings |
+
+Every write goes through Polkit, replaces the file atomically and keeps the previous version as `<file>.argoncc.bak`.
+
+## Permissions
+
+The application never needs to run as root. Privileged writes prompt for a password through Polkit. Direct hardware access uses group membership:
+
+| Feature | Requirement |
+|---|---|
+| Telemetry | None |
+| System files, service control | Polkit authentication when needed |
 | I2C (case detection, fan override, console) | `i2c` group |
-| GPIO lab | `gpio` group (`/dev/gpiochip*`, `/dev/gpiomem*`) |
-| Serial console | `dialout` (Debian/Fedora) or `uucp` (Arch) |
+| GPIO lab | `gpio` group |
+| Serial console | `dialout` (Debian, Fedora) or `uucp` (Arch) |
 
-The packages set this up automatically. For source installs, use **🔓 Unlock Direct Hardware Access** in the GPIO Lab, or run:
+The packages create the groups, install udev rules for `/dev/i2c-*`, `/dev/gpiochip*` and `/dev/gpiomem*`, and load `i2c-dev` at boot. The user who installed the package with `sudo` is added to the groups automatically.
 
-```bash
-sudo packaging/common/setup-permissions.sh "$USER"    # then log out and back in
+For installations from source, use **Unlock Direct Hardware Access** in the GPIO lab, or run:
+
+```sh
+sudo packaging/common/setup-permissions.sh "$USER"
 ```
 
-The script creates the groups, installs `60-argon-control-center.rules`, loads `i2c-dev` at boot, reloads udev and adds the user to the groups. It never relies on setuid binaries or world-writable device nodes, and it removes setuid bits left by earlier development versions of this app.
+No setuid binaries or world-writable device nodes are used.
 
----
+## Building from source
 
-## 🚀 Usage
+### Dependencies
 
-| Option | Effect |
-|---|---|
-| *(none)* | opens the GUI (English, or the language saved in settings) |
-| `--pt`, `--lang=pt` | opens the GUI in Brazilian Portuguese |
-| `--en`, `--lang=en` | opens the GUI in English |
-| `--status`, `-s` | prints telemetry, detected board/case and current overclock |
+```sh
+# Debian / Ubuntu / Raspberry Pi OS
+sudo apt install build-essential pkg-config libgl1-mesa-dev libxkbcommon-dev \
+  libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 
----
+# Fedora
+sudo dnf install gcc pkgconf mesa-libGL-devel mesa-libEGL-devel \
+  libxkbcommon-devel wayland-devel libX11-devel
 
-## 🧪 Development
-
-```bash
-mise run check                                         # cargo test
-mise run lint                                          # fmt --check + clippy -D warnings (same as CI)
-cargo test print_board -- --ignored --nocapture        # detected board diagnostics
-cargo test print_detected -- --ignored --nocapture     # detected desktop colors
+# Arch Linux
+sudo pacman -S --needed base-devel libglvnd libxkbcommon wayland libx11
 ```
 
-CI (`.github/workflows/ci.yml`) runs fmt, clippy, tests and a release build on x86_64 and ARM64. `.github/workflows/package.yml` builds and smoke-tests the `.deb`, `.rpm` and Arch packages, and attaches them to the GitHub Release on `v*` tags.
+Rust stable is required. The toolchain is pinned with [mise](https://mise.jdx.dev) (`mise.toml`); [rustup](https://rustup.rs) also works.
 
-### Releasing
+Optional runtime tools: `pkexec` (Polkit), `i2c-tools`, `gpiod` / `libgpiod-utils` and `pinctrl` (`raspi-utils` on Raspberry Pi OS).
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` to a new `## [x.y.z] - YYYY-MM-DD` section and bump `version` in `Cargo.toml` (plus `Version` in the RPM spec and `pkgver` in the `PKGBUILD`).
-2. Merge to `main`, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+### Build and install
 
-The `Packages` workflow then builds and tests every package, checks that the tag matches `Cargo.toml`, writes `SHA256SUMS` and publishes the GitHub Release "Argon Control Center X.Y.Z". The release notes come from the matching `CHANGELOG.md` section (or from Conventional Commits since the previous tag), followed by installation and verification instructions. Tags with a suffix (`v1.2.0-rc.1`) are published as pre-releases. Preview the notes locally with `scripts/release-notes.sh vX.Y.Z`.
+```sh
+git clone https://github.com/wendelmax/argon-config-rs.git
+cd argon-config-rs
+mise install          # install the pinned Rust toolchain
+mise run install      # build and install to ~/.local
+```
 
-### Layout
+Without mise, use `cargo build --release` and `scripts/install.sh`. Remove the installation with `mise run uninstall` or `scripts/install.sh --uninstall`.
 
-| Path | Purpose |
-|---|---|
-| `src/main.rs` | entry point, CLI |
-| `src/ui.rs` | interface (tabs, theme layouts) |
-| `src/board.rs` | board, case and overclock profile detection |
-| `src/telemetry.rs` | sensors (`/proc`, `/sys`) |
-| `src/argon.rs` | fan curves and Argon MCU |
-| `src/overclock.rs` | `config.txt` read/write, live cpufreq |
-| `src/gpio_lab.rs` | logic analyzer, serial/I2C console, permission setup |
-| `src/theme.rs` | styles, theme-aware colors, donuts and charts |
-| `src/system_colors.rs` | desktop palette (KDE/GTK/portal) |
-| `src/settings.rs` | saved preferences |
-| `src/i18n.rs` | UI strings (EN / PT-BR) |
-| `src/privileged.rs` | Polkit elevation, atomic writes with backup |
-| `packaging/` | `.deb`, `.rpm`, Arch `PKGBUILD`, udev rules, permission setup |
-| `scripts/install.sh` | per-user install from source |
-| `scripts/release-notes.sh` | GitHub release notes for a tag |
-| `CHANGELOG.md` | release history (Keep a Changelog) |
+### Packages
 
----
+```sh
+packaging/debian/build-deb.sh                          # Debian / Ubuntu  -> dist/*.deb
+rpmbuild -bb packaging/rpm/argon-control-center.spec   # Fedora (source tarball in ~/rpmbuild/SOURCES)
+(cd packaging/arch && makepkg -si)                     # Arch Linux
+```
 
-## ⚠️ Warnings
-- Overclocking and over-voltage can cause instability; keep active cooling. If the Pi stops booting after a change, edit `config.txt` on the SD card from another computer: restore `config.txt.argoncc.bak` or delete the `ARGON AORUS CONTROL CENTER` block.
-- Stopping `argononed` disables the automatic fan curve and the case power button.
+## Development
 
----
+```sh
+mise run check     # tests
+mise run lint      # rustfmt check and clippy with warnings as errors
+cargo run          # run the application
 
-## 📄 License
+cargo test print_board -- --ignored --nocapture     # print detected hardware
+cargo test print_detected -- --ignored --nocapture  # print detected desktop colors
+```
 
-[MIT](LICENSE) © 2026 wendelmax
+Continuous integration runs formatting, clippy, tests and a release build on x86_64 and ARM64 for every pull request. Changes to packaging also build, install and test the Debian, Fedora and Arch packages.
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `ci:`).
+
+## Release process
+
+Versions follow [Semantic Versioning](https://semver.org/): increment **MAJOR** for breaking changes, **MINOR** for new features and **PATCH** for fixes.
+
+1. Record changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
+2. Bump the version on a branch and merge it through a pull request:
+   ```sh
+   scripts/bump-version.sh patch    # or: minor, major
+   ```
+   This updates `Cargo.toml`, `Cargo.lock`, the RPM spec, the PKGBUILD and the changelog.
+3. Tag the merged commit on `main` and push the tag:
+   ```sh
+   scripts/bump-version.sh --tag
+   git push origin vX.Y.Z
+   ```
+
+Pushing the tag builds and tests every package and publishes a GitHub Release named "Argon Control Center X.Y.Z". The release notes come from the changelog and include installation instructions and checksums. Tags with a pre-release suffix such as `v1.2.0-rc.1` are published as pre-releases. Preview the notes with `scripts/release-notes.sh vX.Y.Z`.
+
+## Project structure
+
+```text
+src/
+  main.rs            entry point and command-line options
+  ui.rs              application window, pages and layouts
+  board.rs           board, case and overclocking profile detection
+  telemetry.rs       sensors from /proc and /sys
+  argon.rs           fan curves and Argon MCU access
+  overclock.rs       config.txt parsing and writing, live cpufreq
+  gpio_lab.rs        GPIO analyzer, serial and I2C console, permission setup
+  theme.rs           styles, charts and theme-aware colors
+  system_colors.rs   desktop color scheme detection
+  settings.rs        user preferences
+  i18n.rs            English and Portuguese strings
+  privileged.rs      Polkit elevation and atomic writes
+packaging/           Debian, RPM and Arch packaging, udev rules, permission setup
+scripts/             install, version bump and release notes helpers
+.github/workflows/   CI and package/release pipelines
+```
+
+## Contributing
+
+Contributions are welcome. Please open an issue to discuss larger changes first.
+
+1. Fork the repository and create a branch from `main`.
+2. Make your change and add tests where practical.
+3. Run `mise run lint` and `mise run check`.
+4. Add an entry under `[Unreleased]` in `CHANGELOG.md`.
+5. Open a pull request with a Conventional Commit title.
+
+## Security
+
+Overclocking and over-voltage settings can make a system unstable. Keep active cooling in place. If the board no longer boots after a change, edit `config.txt` on the SD card from another computer: restore `config.txt.argoncc.bak` or remove the `ARGON AORUS CONTROL CENTER` block.
+
+Stopping `argononed` disables the automatic fan curve and the case power button.
+
+To report a security issue, please use [GitHub private vulnerability reporting](https://github.com/wendelmax/argon-config-rs/security/advisories/new) instead of a public issue.
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+Argon40, Raspberry Pi and AORUS are trademarks of their respective owners. This project is not affiliated with or endorsed by them.
