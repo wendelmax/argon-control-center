@@ -10,6 +10,7 @@
 # - removes setuid bits that very old versions of this app set on GPIO/I2C tools
 # - adds USER to i2c, gpio and the serial group (dialout on Debian/Fedora, uucp on Arch)
 set -eu
+umask 022
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "setup-permissions.sh must run as root (try: sudo $0 ${1:-\$USER})" >&2
