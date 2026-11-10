@@ -44,28 +44,68 @@ impl FanPreset {
     pub fn points(&self) -> Vec<FanCurvePoint> {
         match self {
             FanPreset::Silent => vec![
-                FanCurvePoint { temp_c: 60.0, speed_pct: 30 },
-                FanCurvePoint { temp_c: 68.0, speed_pct: 55 },
-                FanCurvePoint { temp_c: 75.0, speed_pct: 100 },
+                FanCurvePoint {
+                    temp_c: 60.0,
+                    speed_pct: 30,
+                },
+                FanCurvePoint {
+                    temp_c: 68.0,
+                    speed_pct: 55,
+                },
+                FanCurvePoint {
+                    temp_c: 75.0,
+                    speed_pct: 100,
+                },
             ],
             FanPreset::BalancedDefault => vec![
-                FanCurvePoint { temp_c: 55.0, speed_pct: 30 },
-                FanCurvePoint { temp_c: 60.0, speed_pct: 55 },
-                FanCurvePoint { temp_c: 65.0, speed_pct: 100 },
+                FanCurvePoint {
+                    temp_c: 55.0,
+                    speed_pct: 30,
+                },
+                FanCurvePoint {
+                    temp_c: 60.0,
+                    speed_pct: 55,
+                },
+                FanCurvePoint {
+                    temp_c: 65.0,
+                    speed_pct: 100,
+                },
             ],
             FanPreset::Performance => vec![
-                FanCurvePoint { temp_c: 42.0, speed_pct: 35 },
-                FanCurvePoint { temp_c: 50.0, speed_pct: 65 },
-                FanCurvePoint { temp_c: 58.0, speed_pct: 85 },
-                FanCurvePoint { temp_c: 63.0, speed_pct: 100 },
+                FanCurvePoint {
+                    temp_c: 42.0,
+                    speed_pct: 35,
+                },
+                FanCurvePoint {
+                    temp_c: 50.0,
+                    speed_pct: 65,
+                },
+                FanCurvePoint {
+                    temp_c: 58.0,
+                    speed_pct: 85,
+                },
+                FanCurvePoint {
+                    temp_c: 63.0,
+                    speed_pct: 100,
+                },
             ],
-            FanPreset::AlwaysOnTurbo => vec![
-                FanCurvePoint { temp_c: 1.0, speed_pct: 100 },
-            ],
+            FanPreset::AlwaysOnTurbo => vec![FanCurvePoint {
+                temp_c: 1.0,
+                speed_pct: 100,
+            }],
             FanPreset::Custom => vec![
-                FanCurvePoint { temp_c: 50.0, speed_pct: 30 },
-                FanCurvePoint { temp_c: 60.0, speed_pct: 60 },
-                FanCurvePoint { temp_c: 65.0, speed_pct: 100 },
+                FanCurvePoint {
+                    temp_c: 50.0,
+                    speed_pct: 30,
+                },
+                FanCurvePoint {
+                    temp_c: 60.0,
+                    speed_pct: 60,
+                },
+                FanCurvePoint {
+                    temp_c: 65.0,
+                    speed_pct: 100,
+                },
             ],
         }
     }
@@ -128,7 +168,9 @@ pub fn parse_fan_config_str(content: &str) -> Vec<FanCurvePoint> {
             continue;
         }
         if let Some((t_str, s_str)) = trimmed.split_once('=') {
-            if let (Ok(temp_c), Ok(speed_f)) = (t_str.trim().parse::<f32>(), s_str.trim().parse::<f32>()) {
+            if let (Ok(temp_c), Ok(speed_f)) =
+                (t_str.trim().parse::<f32>(), s_str.trim().parse::<f32>())
+            {
                 if (0.0..=110.0).contains(&temp_c) && (0.0..=100.0).contains(&speed_f) {
                     points.push(FanCurvePoint {
                         temp_c,
@@ -138,7 +180,11 @@ pub fn parse_fan_config_str(content: &str) -> Vec<FanCurvePoint> {
             }
         }
     }
-    points.sort_by(|a, b| a.temp_c.partial_cmp(&b.temp_c).unwrap_or(std::cmp::Ordering::Equal));
+    points.sort_by(|a, b| {
+        a.temp_c
+            .partial_cmp(&b.temp_c)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     points
 }
 
@@ -154,7 +200,11 @@ pub fn load_fan_curve(path: &str, default_points: Vec<FanCurvePoint>) -> Vec<Fan
 
 pub fn serialize_fan_curve(points: &[FanCurvePoint], label: &str) -> String {
     let mut sorted = points.to_vec();
-    sorted.sort_by(|a, b| a.temp_c.partial_cmp(&b.temp_c).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        a.temp_c
+            .partial_cmp(&b.temp_c)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut out = String::new();
     out.push_str("#\n");
@@ -186,14 +236,18 @@ pub fn save_fan_curve(path: &str, points: &[FanCurvePoint], label: &str) -> Resu
 pub fn evaluate_fan_speed(temp_c: f32, points: &[FanCurvePoint]) -> u8 {
     let mut best_speed = 0u8;
     let mut sorted = points.to_vec();
-    sorted.sort_by(|a, b| b.temp_c.partial_cmp(&a.temp_c).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.temp_c
+            .partial_cmp(&a.temp_c)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     for pt in sorted {
         if temp_c >= pt.temp_c {
             best_speed = if pt.speed_pct == 0 {
                 0
             } else {
-                pt.speed_pct.max(25).min(100)
+                pt.speed_pct.clamp(25, 100)
             };
             break;
         }
@@ -266,10 +320,7 @@ pub fn load_oled_config() -> OledConfig {
                         }
                     }
                     "screenlist" => {
-                        cfg.screens = val
-                            .split_whitespace()
-                            .map(|s| s.to_string())
-                            .collect();
+                        cfg.screens = val.split_whitespace().map(|s| s.to_string()).collect();
                     }
                     "enabled" => {
                         cfg.enabled = !val.eq_ignore_ascii_case("N");
@@ -345,9 +396,7 @@ pub fn reset_argon_ir_power_button() -> Result<String, String> {
         run_root_script("/usr/bin/python3 /etc/argon/argonirdecoder resetpower")
     } else {
         // Program default Argon IR power code directly via I2C register 0x82 if decoder not yet downloaded
-        run_root_script(
-            "/etc/argon/argonone-ir <<< $'Y\\n1\\n1\\n' || true",
-        )
+        run_root_script("/etc/argon/argonone-ir <<< $'Y\\n1\\n1\\n' || true")
     }
 }
 

@@ -17,8 +17,8 @@ use crate::overclock::{
 use crate::privileged::is_root;
 use crate::telemetry::TelemetryState;
 use crate::theme::{
-    configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart, KdeBreezePalette,
-    ThemeModel,
+    configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart,
+    draw_kde_donut_chart_sized, KdeBreezePalette, ThemeModel,
 };
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Response, RichText, Sense,
@@ -86,6 +86,8 @@ pub struct ArgonControlCenterApp {
     pub lang: Language,
     pub theme_model: ThemeModel,
     pub kde_palette: KdeBreezePalette,
+    palette_rx: Option<std::sync::mpsc::Receiver<KdeBreezePalette>>,
+    last_palette_check: Instant,
     pub active_tab: ActiveTab,
     pub telemetry: TelemetryState,
     pub last_tick: Instant,
@@ -131,9 +133,18 @@ impl ArgonControlCenterApp {
         let hdd_fan_curve = load_fan_curve(
             HDD_FAN_CONF,
             vec![
-                FanCurvePoint { temp_c: 35.0, speed_pct: 30 },
-                FanCurvePoint { temp_c: 40.0, speed_pct: 55 },
-                FanCurvePoint { temp_c: 45.0, speed_pct: 100 },
+                FanCurvePoint {
+                    temp_c: 35.0,
+                    speed_pct: 30,
+                },
+                FanCurvePoint {
+                    temp_c: 40.0,
+                    speed_pct: 55,
+                },
+                FanCurvePoint {
+                    temp_c: 45.0,
+                    speed_pct: 100,
+                },
             ],
         );
         let mut telemetry = TelemetryState::new();
@@ -162,8 +173,10 @@ impl ArgonControlCenterApp {
 
         Self {
             lang: initial_lang,
-            theme_model: ThemeModel::KdeBreeze,
+            theme_model: ThemeModel::KdeCompactOverview,
             kde_palette,
+            palette_rx: None,
+            last_palette_check: Instant::now(),
             active_tab: ActiveTab::Dashboard,
             telemetry,
             last_tick: Instant::now(),
@@ -199,7 +212,8 @@ impl ArgonControlCenterApp {
                 if self.action_logs.len() >= 100 {
                     self.action_logs.pop_front();
                 }
-                self.action_logs.push_back(format!("[OK] {action} -> {msg}"));
+                self.action_logs
+                    .push_back(format!("[OK] {action} -> {msg}"));
             }
             Err(err) => {
                 self.status_message = Some(format!("✖ {action}: {err}"));
@@ -220,10 +234,9 @@ pub fn configure_aorus_style(ctx: &egui::Context) {
         TextStyle::Heading,
         FontId::new(18.0, FontFamily::Proportional),
     );
-    style.text_styles.insert(
-        TextStyle::Body,
-        FontId::new(13.5, FontFamily::Proportional),
-    );
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::new(13.5, FontFamily::Proportional));
     style.text_styles.insert(
         TextStyle::Button,
         FontId::new(13.0, FontFamily::Proportional),
@@ -302,8 +315,10 @@ impl eframe::App for ArgonControlCenterApp {
         }
         ctx.request_repaint_after(tick_interval);
 
+        self.poll_system_palette(ctx);
+
         match self.theme_model {
-            ThemeModel::KdeBreeze => {
+            ThemeModel::KdeCompactOverview | ThemeModel::KdeBreeze => {
                 let pal = self.kde_palette;
                 // 1. Kirigami Global Drawer Left Sidebar (on windows >= 680px wide)
                 if ctx.screen_rect().width() >= 680.0 {
@@ -350,13 +365,19 @@ impl eframe::App for ArgonControlCenterApp {
                     .frame(
                         egui::Frame::new()
                             .fill(pal.window_bg)
-                            .inner_margin(egui::Margin::symmetric(14, 12)),
+                            .inner_margin(egui::Margin::symmetric(14, 10)),
                     )
                     .show(ctx, |ui| {
                         egui::ScrollArea::vertical()
                             .auto_shrink([false, false])
                             .show(ui, |ui| match self.active_tab {
-                                ActiveTab::Dashboard => self.draw_kde_dashboard_tab(ui),
+                                ActiveTab::Dashboard => {
+                                    if self.theme_model == ThemeModel::KdeCompactOverview {
+                                        self.draw_kde_compact_overview_tab(ui);
+                                    } else {
+                                        self.draw_kde_dashboard_tab(ui);
+                                    }
+                                }
                                 ActiveTab::SmartFan => self.draw_smart_fan_tab(ui),
                                 ActiveTab::Overclocking => self.draw_overclocking_tab(ui),
                                 ActiveTab::Features => self.draw_features_tab(ui),
@@ -365,13 +386,29 @@ impl eframe::App for ArgonControlCenterApp {
                             });
                     });
             }
-            ThemeModel::AorusGaming => {
-                // Saved v1.0 AORUS Gaming Layout
+            ThemeModel::BreezeClassicLayout | ThemeModel::AorusGaming => {
+                let is_breeze_pal = self.theme_model == ThemeModel::BreezeClassicLayout;
+                let top_fill = if is_breeze_pal {
+                    self.kde_palette.header_bg
+                } else {
+                    BG_PANEL
+                };
+                let body_fill = if is_breeze_pal {
+                    self.kde_palette.window_bg
+                } else {
+                    BG_DARK
+                };
+                let bdr = if is_breeze_pal {
+                    self.kde_palette.border_subtle
+                } else {
+                    BORDER_SUBTLE
+                };
+
                 egui::TopBottomPanel::top("aorus_top_bar")
                     .frame(
                         egui::Frame::new()
-                            .fill(BG_PANEL)
-                            .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                            .fill(top_fill)
+                            .stroke(Stroke::new(1.0_f32, bdr))
                             .inner_margin(egui::Margin::symmetric(14, 8)),
                     )
                     .show(ctx, |ui| {
@@ -381,8 +418,8 @@ impl eframe::App for ArgonControlCenterApp {
                 egui::TopBottomPanel::bottom("aorus_bottom_bar")
                     .frame(
                         egui::Frame::new()
-                            .fill(BG_PANEL)
-                            .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                            .fill(top_fill)
+                            .stroke(Stroke::new(1.0_f32, bdr))
                             .inner_margin(egui::Margin::symmetric(14, 6)),
                     )
                     .show(ctx, |ui| {
@@ -392,7 +429,7 @@ impl eframe::App for ArgonControlCenterApp {
                 egui::CentralPanel::default()
                     .frame(
                         egui::Frame::new()
-                            .fill(BG_DARK)
+                            .fill(body_fill)
                             .inner_margin(egui::Margin::symmetric(14, 12)),
                     )
                     .show(ctx, |ui| {
@@ -423,10 +460,22 @@ impl ArgonControlCenterApp {
                 AORUS_ORANGE,
             ),
             (
+                ThemeModel::BreezeClassicLayout,
+                t.theme_breeze_classic_label,
+                Color32::from_rgb(38, 86, 128),
+                self.kde_palette.focus_blue,
+            ),
+            (
                 ThemeModel::KdeBreeze,
                 t.theme_kde_label,
                 Color32::from_rgb(24, 98, 145),
                 self.kde_palette.focus_blue,
+            ),
+            (
+                ThemeModel::KdeCompactOverview,
+                t.theme_kde_compact_label,
+                Color32::from_rgb(18, 115, 135),
+                self.kde_palette.positive_green,
             ),
         ] {
             let is_sel = self.theme_model == model;
@@ -434,7 +483,9 @@ impl ArgonControlCenterApp {
             if resp.clicked() && !is_sel {
                 self.theme_model = model;
                 match model {
-                    ThemeModel::KdeBreeze => {
+                    ThemeModel::KdeCompactOverview
+                    | ThemeModel::KdeBreeze
+                    | ThemeModel::BreezeClassicLayout => {
                         self.kde_palette = KdeBreezePalette::load_from_system();
                         configure_kde_breeze_style(ctx, &self.kde_palette);
                     }
@@ -447,9 +498,45 @@ impl ArgonControlCenterApp {
                 resp,
                 "Theme Model / Modelo de Tema",
                 t.theme_selector_tip,
-                Some("~/.config/kdeglobals"),
+                Some(&self.kde_palette.describe()),
             );
         }
+    }
+
+    /// Re-reads the desktop palette (KDE / GNOME / XFCE / portal…) every few seconds on a worker
+    /// thread and restyles only when the colors actually changed, so theme switches in the
+    /// system settings are picked up live.
+    fn poll_system_palette(&mut self, ctx: &egui::Context) {
+        if let Some(rx) = &self.palette_rx {
+            match rx.try_recv() {
+                Ok(pal) => {
+                    self.palette_rx = None;
+                    if !pal.same_colors(&self.kde_palette) {
+                        self.kde_palette = pal;
+                        if self.theme_model != ThemeModel::AorusGaming {
+                            configure_kde_breeze_style(ctx, &self.kde_palette);
+                        }
+                        ctx.request_repaint();
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.palette_rx = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+            return;
+        }
+        if self.theme_model == ThemeModel::AorusGaming
+            || self.last_palette_check.elapsed() < Duration::from_secs(4)
+        {
+            return;
+        }
+        self.last_palette_check = Instant::now();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.palette_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(KdeBreezePalette::load_from_system());
+            ctx.request_repaint();
+        });
     }
 
     fn draw_kde_sidebar(&mut self, ui: &mut Ui, _ctx: &egui::Context) {
@@ -492,7 +579,11 @@ impl ArgonControlCenterApp {
         let tabs = [
             (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
             (ActiveTab::SmartFan, t.tab_smart_fan, t.tab_smart_fan_tip),
-            (ActiveTab::Overclocking, t.tab_overclock, t.tab_overclock_tip),
+            (
+                ActiveTab::Overclocking,
+                t.tab_overclock,
+                t.tab_overclock_tip,
+            ),
             (ActiveTab::Features, t.tab_features, t.tab_features_tip),
             (ActiveTab::GpioLab, t.tab_gpio_lab, t.tab_gpio_lab_tip),
             (
@@ -509,11 +600,7 @@ impl ArgonControlCenterApp {
             let painter = ui.painter_at(rect);
 
             if selected {
-                painter.rect_filled(
-                    rect,
-                    CornerRadius::same(4),
-                    Color32::from_rgb(28, 86, 122),
-                );
+                painter.rect_filled(rect, CornerRadius::same(4), pal.selected_fill);
                 painter.rect_stroke(
                     rect,
                     CornerRadius::same(4),
@@ -527,7 +614,7 @@ impl ArgonControlCenterApp {
                 );
                 painter.rect_filled(bar, CornerRadius::same(2), pal.focus_blue);
             } else if resp.hovered() {
-                painter.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(50, 55, 62));
+                painter.rect_filled(rect, CornerRadius::same(4), pal.hover_bg);
             }
 
             painter.text(
@@ -536,7 +623,7 @@ impl ArgonControlCenterApp {
                 label,
                 FontId::new(13.0, FontFamily::Proportional),
                 if selected {
-                    Color32::WHITE
+                    pal.on_selected
                 } else {
                     pal.text_normal
                 },
@@ -805,7 +892,8 @@ impl ArgonControlCenterApp {
                             [(Language::EnUs, "🇺🇸 EN"), (Language::PtBr, "🇧🇷 PT")]
                         {
                             let is_sel = self.lang == lang_opt;
-                            let resp = segmented_pill(ui, short_lbl, is_sel, BTN_CYAN_FILL, ARGON_CYAN);
+                            let resp =
+                                segmented_pill(ui, short_lbl, is_sel, BTN_CYAN_FILL, ARGON_CYAN);
                             if resp.clicked() && !is_sel {
                                 self.lang = lang_opt;
                             }
@@ -857,7 +945,11 @@ impl ArgonControlCenterApp {
                     let tabs = [
                         (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
                         (ActiveTab::SmartFan, t.tab_smart_fan, t.tab_smart_fan_tip),
-                        (ActiveTab::Overclocking, t.tab_overclock, t.tab_overclock_tip),
+                        (
+                            ActiveTab::Overclocking,
+                            t.tab_overclock,
+                            t.tab_overclock_tip,
+                        ),
                         (ActiveTab::Features, t.tab_features, t.tab_features_tip),
                         (ActiveTab::GpioLab, t.tab_gpio_lab, t.tab_gpio_lab_tip),
                         (
@@ -880,19 +972,17 @@ impl ArgonControlCenterApp {
                             Stroke::NONE
                         };
 
-                        let btn = egui::Button::new(
-                            RichText::new(title)
-                                .size(13.0)
-                                .strong()
-                                .color(if is_active {
+                        let btn =
+                            egui::Button::new(RichText::new(title).size(13.0).strong().color(
+                                if is_active {
                                     Color32::WHITE
                                 } else {
                                     TEXT_SECONDARY
-                                }),
-                        )
-                        .fill(fill)
-                        .stroke(stroke)
-                        .min_size(Vec2::new(135.0, 30.0));
+                                },
+                            ))
+                            .fill(fill)
+                            .stroke(stroke)
+                            .min_size(Vec2::new(135.0, 30.0));
 
                         let resp = ui.add(btn);
                         if resp.clicked() {
@@ -942,7 +1032,415 @@ impl ArgonControlCenterApp {
     }
 
     // =========================================================================
-    // TAB 1A: KDE SYSTEM MONITOR DASHBOARD (overview.page + history.page)
+    // TAB 1A: KDE COMPACT ALL-IN-ONE OVERVIEW (NO-SCROLL TELEMETRY + CONTROLS)
+    // =========================================================================
+    fn draw_kde_compact_overview_tab(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let lang = self.lang;
+        let pal = self.kde_palette;
+
+        // 1. Compact Donut Ring Strip (CPU | Temp | Cooler | RAM)
+        aorus_card_with_tip(
+            ui,
+            t.kde_overview_sensors_title,
+            t.tab_dashboard_tip,
+            pal.focus_blue,
+            |ui| {
+                let cpu_frac = (self.telemetry.cpu_total_usage_pct / 100.0).clamp(0.0, 1.0);
+                let cpu_val = format!("{:.1}%", self.telemetry.cpu_total_usage_pct);
+                let cpu_sub = format!(
+                    "{} MHz • {}",
+                    self.telemetry.cpu_cur_freq_mhz, self.telemetry.cpu_governor
+                );
+
+                let temp_c = self.telemetry.cpu_temp_c;
+                let temp_frac = ((temp_c - 25.0) / 60.0).clamp(0.0, 1.0);
+                let temp_col = if temp_c >= 70.0 {
+                    pal.negative_red
+                } else if temp_c >= 58.0 {
+                    pal.neutral_orange
+                } else {
+                    pal.positive_green
+                };
+                let temp_val = self.temp_unit.format_temp(temp_c);
+                let temp_sub = format!(
+                    "{}: {}",
+                    t.peak_max,
+                    self.temp_unit.format_temp(self.telemetry.max_temp_c)
+                );
+
+                let fan_pct = self.telemetry.target_fan_speed_pct;
+                let fan_frac = (fan_pct as f32 / 100.0).clamp(0.0, 1.0);
+                let fan_val = format!("{fan_pct}%");
+                let fan_sub = if self.telemetry.manual_fan_override.is_some() {
+                    t.fan_mode_manual
+                } else {
+                    t.fan_mode_auto
+                };
+
+                let ram_frac = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
+                let ram_val = format!(
+                    "{:.1} / {:.1} GB",
+                    self.telemetry.ram_used_mb as f32 / 1024.0,
+                    self.telemetry.ram_total_mb as f32 / 1024.0
+                );
+                let ram_sub = format!(
+                    "↓{:.0} ↑{:.0} KB/s",
+                    self.telemetry.net_rx_kbps, self.telemetry.net_tx_kbps
+                );
+
+                ui.columns(4, |cols| {
+                    draw_kde_donut_chart_sized(
+                        &mut cols[0],
+                        t.gauge_cpu_clock,
+                        &cpu_val,
+                        &cpu_sub,
+                        cpu_frac,
+                        pal.focus_blue,
+                        &pal,
+                        true,
+                    );
+                    draw_kde_donut_chart_sized(
+                        &mut cols[1],
+                        t.gauge_cpu_temp,
+                        &temp_val,
+                        &temp_sub,
+                        temp_frac,
+                        temp_col,
+                        &pal,
+                        true,
+                    );
+                    draw_kde_donut_chart_sized(
+                        &mut cols[2],
+                        t.gauge_fan_speed,
+                        &fan_val,
+                        fan_sub,
+                        fan_frac,
+                        Color32::from_rgb(26, 188, 156),
+                        &pal,
+                        true,
+                    );
+                    draw_kde_donut_chart_sized(
+                        &mut cols[3],
+                        t.gauge_memory,
+                        &ram_val,
+                        &ram_sub,
+                        ram_frac,
+                        pal.visited_purple,
+                        &pal,
+                        true,
+                    );
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+
+        // 2. Integrated Quick Control Deck (Fan + Overclock + Argononed Daemon + Hardware)
+        aorus_card_with_tip(
+            ui,
+            t.kde_compact_controls_title,
+            t.kde_compact_controls_tip,
+            pal.positive_green,
+            |ui| {
+                ui.columns(3, |cols| {
+                    // Column 1: Smart Fan Direct Controls
+                    cols[0].label(
+                        RichText::new("🌀 Smart Fan & I2C PWM")
+                            .size(12.5)
+                            .strong()
+                            .color(pal.focus_blue),
+                    );
+                    cols[0].add_space(4.0);
+                    cols[0].horizontal_wrapped(|ui| {
+                        for (lbl, spd) in [
+                            (t.quick_auto, None),
+                            ("0%", Some(0u8)),
+                            ("35%", Some(35)),
+                            ("65%", Some(65)),
+                            ("100%", Some(100)),
+                        ] {
+                            let is_sel = self.telemetry.manual_fan_override == spd;
+                            if segmented_pill(
+                                ui,
+                                lbl,
+                                is_sel,
+                                Color32::from_rgb(24, 98, 145),
+                                pal.focus_blue,
+                            )
+                            .clicked()
+                            {
+                                self.telemetry.manual_fan_override = spd;
+                                match spd {
+                                    Some(pct) => {
+                                        self.manual_fan_slider = pct;
+                                        let res = set_immediate_fan_speed(pct);
+                                        self.log_result(&format!("Fan PWM {pct}%"), res);
+                                    }
+                                    None => {
+                                        let res = control_argononed_service("restart");
+                                        self.log_result("Fan Auto Curve", res);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    cols[0].add_space(4.0);
+                    cols[0].horizontal_wrapped(|ui| {
+                        egui::ComboBox::from_id_salt("compact_fan_preset")
+                            .width(145.0)
+                            .selected_text(self.selected_fan_preset.label(lang))
+                            .show_ui(ui, |ui| {
+                                for p in [
+                                    FanPreset::Silent,
+                                    FanPreset::BalancedDefault,
+                                    FanPreset::Performance,
+                                    FanPreset::AlwaysOnTurbo,
+                                ] {
+                                    if ui
+                                        .selectable_label(
+                                            self.selected_fan_preset == p,
+                                            p.label(lang),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.selected_fan_preset = p;
+                                        self.cpu_fan_curve = p.points();
+                                    }
+                                }
+                            });
+                        if aorus_action_button(
+                            ui,
+                            "💾",
+                            Color32::from_rgb(18, 115, 72),
+                            pal.positive_green,
+                        )
+                        .on_hover_text(t.btn_save_fan_curve_tip)
+                        .clicked()
+                        {
+                            let res = save_fan_curve(CPU_FAN_CONF, &self.cpu_fan_curve, "CPU");
+                            self.log_result("Save CPU Fan Curve", res);
+                        }
+                    });
+
+                    // Column 2: Overclocking & Live CPUFreq Controls
+                    cols[1].label(
+                        RichText::new("🔥 Overclock & CPUFreq")
+                            .size(12.5)
+                            .strong()
+                            .color(pal.neutral_orange),
+                    );
+                    cols[1].add_space(4.0);
+                    cols[1].horizontal_wrapped(|ui| {
+                        for preset in [
+                            OcPreset::EcoPowerSave,
+                            OcPreset::StockBoost,
+                            OcPreset::OcGaming2000,
+                            OcPreset::OcExtreme2147,
+                        ] {
+                            let is_sel = self.selected_oc_preset == preset;
+                            let short_lbl = match preset {
+                                OcPreset::EcoPowerSave => "🌱 1.5G",
+                                OcPreset::StockBoost => "⚖ 1.8G",
+                                OcPreset::OcGaming2000 => "🚀 2.0G",
+                                OcPreset::OcExtreme2147 => "🔥 2.14G",
+                                OcPreset::Custom => "🎛 Custom",
+                            };
+                            if segmented_pill(
+                                ui,
+                                short_lbl,
+                                is_sel,
+                                Color32::from_rgb(155, 72, 12),
+                                pal.neutral_orange,
+                            )
+                            .clicked()
+                            {
+                                self.selected_oc_preset = preset;
+                                self.boot_oc.apply_preset(preset);
+                                self.runtime_max_mhz =
+                                    self.boot_oc.arm_freq_mhz.min(self.telemetry.cpu_hw_max_mhz);
+                                self.runtime_governor = if preset == OcPreset::EcoPowerSave {
+                                    "powersave".to_string()
+                                } else if preset == OcPreset::OcExtreme2147 {
+                                    "performance".to_string()
+                                } else {
+                                    "schedutil".to_string()
+                                };
+                                let res = apply_runtime_cpufreq(
+                                    &self.runtime_governor,
+                                    self.runtime_min_mhz,
+                                    self.runtime_max_mhz,
+                                    self.runtime_boost,
+                                );
+                                self.log_result("1-Click CPUFreq", res);
+                            }
+                        }
+                    });
+                    cols[1].add_space(4.0);
+                    let govs = self.telemetry.available_governors.clone();
+                    cols[1].horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("Gov:").size(11.5).color(pal.text_inactive));
+                        egui::ComboBox::from_id_salt("compact_gov_combo")
+                            .width(120.0)
+                            .selected_text(&self.telemetry.cpu_governor)
+                            .show_ui(ui, |ui| {
+                                for g in &govs {
+                                    if ui
+                                        .selectable_label(&self.telemetry.cpu_governor == g, g)
+                                        .clicked()
+                                    {
+                                        self.runtime_governor = g.clone();
+                                        let res = apply_runtime_cpufreq(
+                                            g,
+                                            self.telemetry.cpu_min_freq_mhz,
+                                            self.telemetry.cpu_max_freq_mhz,
+                                            self.telemetry.cpu_boost_enabled,
+                                        );
+                                        self.log_result(&format!("Governor -> {g}"), res);
+                                    }
+                                }
+                            });
+                    });
+
+                    // Column 3: Argononed Guardian & Quick Lab Access
+                    cols[2].label(
+                        RichText::new("🛡 Guardião argononed & Lab")
+                            .size(12.5)
+                            .strong()
+                            .color(pal.positive_green),
+                    );
+                    cols[2].add_space(4.0);
+                    cols[2].horizontal_wrapped(|ui| {
+                        if aorus_action_button(
+                            ui,
+                            t.btn_start,
+                            Color32::from_rgb(18, 115, 72),
+                            pal.positive_green,
+                        )
+                        .on_hover_text(t.btn_start_tip)
+                        .clicked()
+                        {
+                            let res = control_argononed_service("start");
+                            self.log_result("Start argononed", res);
+                            self.telemetry.last_slow_refresh = None;
+                        }
+                        if aorus_action_button(
+                            ui,
+                            t.btn_restart,
+                            Color32::from_rgb(24, 98, 145),
+                            pal.focus_blue,
+                        )
+                        .on_hover_text(t.btn_restart_tip)
+                        .clicked()
+                        {
+                            let res = control_argononed_service("restart");
+                            self.log_result("Restart argononed", res);
+                            self.telemetry.last_slow_refresh = None;
+                        }
+                        if ui
+                            .button(t.btn_stop)
+                            .on_hover_text(t.btn_stop_tip)
+                            .clicked()
+                        {
+                            let res = control_argononed_service("stop");
+                            self.log_result("Stop argononed", res);
+                            self.telemetry.last_slow_refresh = None;
+                        }
+                    });
+                    cols[2].add_space(4.0);
+                    cols[2].horizontal_wrapped(|ui| {
+                        if ui.small_button("🔬 GPIO & Serial Lab").clicked() {
+                            self.active_tab = ActiveTab::GpioLab;
+                        }
+                        if ui.small_button("🛠 I2C/OLED/IR").clicked() {
+                            self.active_tab = ActiveTab::Features;
+                        }
+                    });
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+
+        // 3. Compact Dual Area Charts (Thermal/CPU/Fan + Memory/Network) & Per-Core/Disk Bars
+        responsive_two_columns(
+            ui,
+            self,
+            |app, left_ui| {
+                aorus_card_with_tip(
+                    left_ui,
+                    t.kde_thermal_history_title,
+                    t.card_telemetry_tip,
+                    pal.focus_blue,
+                    |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            legend_badge(ui, t.legend_temp, pal.neutral_orange);
+                            ui.add_space(6.0);
+                            legend_badge(ui, t.legend_fan_pwm, pal.positive_green);
+                            ui.add_space(6.0);
+                            legend_badge(ui, t.legend_cpu_load, pal.focus_blue);
+                        });
+                        ui.add_space(4.0);
+                        draw_kde_area_line_chart(
+                            ui,
+                            135.0,
+                            &[
+                                (&app.telemetry.cpu_history, pal.focus_blue, 100.0),
+                                (&app.telemetry.fan_history, pal.positive_green, 100.0),
+                                (&app.telemetry.temp_history, pal.neutral_orange, 100.0),
+                            ],
+                            &pal,
+                        );
+                    },
+                );
+            },
+            |app, right_ui| {
+                aorus_card(
+                    right_ui,
+                    t.kde_mem_net_history_title,
+                    pal.visited_purple,
+                    |ui| {
+                        let max_net = app
+                            .telemetry
+                            .net_rx_history
+                            .iter()
+                            .chain(app.telemetry.net_tx_history.iter())
+                            .copied()
+                            .fold(100.0_f32, f32::max);
+                        ui.horizontal_wrapped(|ui| {
+                            legend_badge(ui, "RAM (%)", pal.visited_purple);
+                            ui.add_space(6.0);
+                            legend_badge(
+                                ui,
+                                &format!("↓ RX ({:.0} KB/s)", app.telemetry.net_rx_kbps),
+                                pal.focus_blue,
+                            );
+                            ui.add_space(6.0);
+                            legend_badge(
+                                ui,
+                                &format!("↑ TX ({:.0} KB/s)", app.telemetry.net_tx_kbps),
+                                pal.positive_green,
+                            );
+                        });
+                        ui.add_space(4.0);
+                        draw_kde_area_line_chart(
+                            ui,
+                            135.0,
+                            &[
+                                (&app.telemetry.ram_history, pal.visited_purple, 100.0),
+                                (&app.telemetry.net_rx_history, pal.focus_blue, max_net),
+                                (&app.telemetry.net_tx_history, pal.positive_green, max_net),
+                            ],
+                            &pal,
+                        );
+                    },
+                );
+            },
+        );
+    }
+
+    // =========================================================================
+    // TAB 1B: KDE SYSTEM MONITOR FULL DASHBOARD (overview.page + history.page)
     // =========================================================================
     fn draw_kde_dashboard_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
@@ -1148,7 +1646,46 @@ impl ArgonControlCenterApp {
 
         ui.add_space(12.0);
 
-        // 3. Storage Horizontal Bars + Hardware & Network Specs
+        // 3. KDE history.page Memory (%) & Network Rate (KB/s) Area Chart + Storage/Specs
+        aorus_card(ui, t.kde_mem_net_history_title, pal.visited_purple, |ui| {
+            let max_net = self
+                .telemetry
+                .net_rx_history
+                .iter()
+                .chain(self.telemetry.net_tx_history.iter())
+                .copied()
+                .fold(100.0_f32, f32::max);
+            ui.horizontal_wrapped(|ui| {
+                legend_badge(ui, "RAM (%)", pal.visited_purple);
+                ui.add_space(8.0);
+                legend_badge(
+                    ui,
+                    &format!("↓ Download ({:.1} KB/s)", self.telemetry.net_rx_kbps),
+                    pal.focus_blue,
+                );
+                ui.add_space(8.0);
+                legend_badge(
+                    ui,
+                    &format!("↑ Upload ({:.1} KB/s)", self.telemetry.net_tx_kbps),
+                    pal.positive_green,
+                );
+            });
+            ui.add_space(6.0);
+            draw_kde_area_line_chart(
+                ui,
+                145.0,
+                &[
+                    (&self.telemetry.ram_history, pal.visited_purple, 100.0),
+                    (&self.telemetry.net_rx_history, pal.focus_blue, max_net),
+                    (&self.telemetry.net_tx_history, pal.positive_green, max_net),
+                ],
+                &pal,
+            );
+        });
+
+        ui.add_space(12.0);
+
+        // 4. Storage Horizontal Bars + Hardware & Network Specs
         responsive_two_columns(
             ui,
             self,
@@ -1280,33 +1817,39 @@ impl ArgonControlCenterApp {
         } else {
             ARGON_CYAN
         };
-        aorus_card_with_tip(ui, t.gauge_cpu_temp, t.gauge_cpu_temp_tip, temp_color, |ui| {
-            let ratio = ((self.telemetry.cpu_temp_c - 25.0) / 65.0).clamp(0.0, 1.0);
-            let display_val = match self.temp_unit {
-                TempUnit::Celsius => format!("{:.1}", self.telemetry.cpu_temp_c),
-                TempUnit::Fahrenheit => {
-                    format!("{:.1}", self.telemetry.cpu_temp_c * 9.0 / 5.0 + 32.0)
-                }
-            };
-            let resp = draw_radial_gauge(
-                ui,
-                ratio,
-                &display_val,
-                self.temp_unit.symbol(),
-                &format!(
-                    "{}: {}",
-                    t.peak_max,
-                    self.temp_unit.format_temp(self.telemetry.max_temp_c)
-                ),
-                temp_color,
-            );
-            aorus_tooltip(
-                resp,
-                t.gauge_cpu_temp,
-                t.gauge_cpu_temp_tip,
-                Some("/sys/class/thermal/thermal_zone0/temp"),
-            );
-        });
+        aorus_card_with_tip(
+            ui,
+            t.gauge_cpu_temp,
+            t.gauge_cpu_temp_tip,
+            temp_color,
+            |ui| {
+                let ratio = ((self.telemetry.cpu_temp_c - 25.0) / 65.0).clamp(0.0, 1.0);
+                let display_val = match self.temp_unit {
+                    TempUnit::Celsius => format!("{:.1}", self.telemetry.cpu_temp_c),
+                    TempUnit::Fahrenheit => {
+                        format!("{:.1}", self.telemetry.cpu_temp_c * 9.0 / 5.0 + 32.0)
+                    }
+                };
+                let resp = draw_radial_gauge(
+                    ui,
+                    ratio,
+                    &display_val,
+                    self.temp_unit.symbol(),
+                    &format!(
+                        "{}: {}",
+                        t.peak_max,
+                        self.temp_unit.format_temp(self.telemetry.max_temp_c)
+                    ),
+                    temp_color,
+                );
+                aorus_tooltip(
+                    resp,
+                    t.gauge_cpu_temp,
+                    t.gauge_cpu_temp_tip,
+                    Some("/sys/class/thermal/thermal_zone0/temp"),
+                );
+            },
+        );
     }
 
     fn draw_gauge_fan(&self, ui: &mut Ui) {
@@ -1343,27 +1886,26 @@ impl ArgonControlCenterApp {
 
     fn draw_gauge_memory(&self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card_with_tip(
-            ui,
-            t.gauge_memory,
-            t.gauge_memory_tip,
-            AORUS_AMBER,
-            |ui| {
-                let ratio = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
-                let resp = draw_radial_gauge(
-                    ui,
-                    ratio,
-                    &format!("{:.0}", self.telemetry.ram_usage_pct),
-                    "% RAM",
-                    &format!(
-                        "{} / {} MB",
-                        self.telemetry.ram_used_mb, self.telemetry.ram_total_mb
-                    ),
-                    AORUS_AMBER,
-                );
-                aorus_tooltip(resp, t.gauge_memory, t.gauge_memory_tip, Some("/proc/meminfo"));
-            },
-        );
+        aorus_card_with_tip(ui, t.gauge_memory, t.gauge_memory_tip, AORUS_AMBER, |ui| {
+            let ratio = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
+            let resp = draw_radial_gauge(
+                ui,
+                ratio,
+                &format!("{:.0}", self.telemetry.ram_usage_pct),
+                "% RAM",
+                &format!(
+                    "{} / {} MB",
+                    self.telemetry.ram_used_mb, self.telemetry.ram_total_mb
+                ),
+                AORUS_AMBER,
+            );
+            aorus_tooltip(
+                resp,
+                t.gauge_memory,
+                t.gauge_memory_tip,
+                Some("/proc/meminfo"),
+            );
+        });
     }
 
     fn draw_core_load_card(&mut self, ui: &mut Ui) {
@@ -1435,9 +1977,7 @@ impl ArgonControlCenterApp {
                         ui.label(
                             RichText::new(format!(
                                 "{}: ⬇ {:.1} KB/s   ⬆ {:.1} KB/s",
-                                t.net_label,
-                                self.telemetry.net_rx_kbps,
-                                self.telemetry.net_tx_kbps
+                                t.net_label, self.telemetry.net_rx_kbps, self.telemetry.net_tx_kbps
                             ))
                             .size(12.0)
                             .strong()
@@ -1723,8 +2263,7 @@ impl ArgonControlCenterApp {
                     );
 
                     ui.add_space(8.0);
-                    let current_eval =
-                        evaluate_fan_speed(app.telemetry.cpu_temp_c, active_curve);
+                    let current_eval = evaluate_fan_speed(app.telemetry.cpu_temp_c, active_curve);
                     ui.label(
                         RichText::new(format!(
                             "🌡 {:.1} °C  ➡  {}: {}% PWM",
@@ -1983,12 +2522,8 @@ impl ArgonControlCenterApp {
                     if save_resp.clicked() {
                         self.telemetry.manual_fan_override = None;
                         let (path, label, pts) = match self.fan_target_mode {
-                            FanTargetMode::Cpu => {
-                                (CPU_FAN_CONF, "CPU", self.cpu_fan_curve.clone())
-                            }
-                            FanTargetMode::Hdd => {
-                                (HDD_FAN_CONF, "HDD", self.hdd_fan_curve.clone())
-                            }
+                            FanTargetMode::Cpu => (CPU_FAN_CONF, "CPU", self.cpu_fan_curve.clone()),
+                            FanTargetMode::Hdd => (HDD_FAN_CONF, "HDD", self.hdd_fan_curve.clone()),
                         };
                         let res = save_fan_curve(path, &pts, label);
                         self.log_result(&format!("Save Fan Curve ({label})"), res);
@@ -2078,13 +2613,8 @@ impl ArgonControlCenterApp {
 
                     if self.telemetry.manual_fan_override.is_some() {
                         ui.add_space(6.0);
-                        if aorus_full_cta_button(
-                            ui,
-                            t.btn_return_auto,
-                            BTN_CYAN_FILL,
-                            ARGON_CYAN,
-                        )
-                        .clicked()
+                        if aorus_full_cta_button(ui, t.btn_return_auto, BTN_CYAN_FILL, ARGON_CYAN)
+                            .clicked()
                         {
                             self.telemetry.manual_fan_override = None;
                             let res = control_argononed_service("restart");
@@ -2149,7 +2679,12 @@ impl ArgonControlCenterApp {
                                     OcPreset::Custom => {}
                                 }
                             }
-                            aorus_tooltip(resp, p.label(lang), tip, Some("/boot/firmware/config.txt"));
+                            aorus_tooltip(
+                                resp,
+                                p.label(lang),
+                                tip,
+                                Some("/boot/firmware/config.txt"),
+                            );
                         }
                     });
                 });
@@ -2256,12 +2791,8 @@ impl ArgonControlCenterApp {
                 });
 
             ui.add_space(10.0);
-            let apply_resp = aorus_full_cta_button(
-                ui,
-                t.btn_apply_runtime_cpu,
-                BTN_GREEN_FILL,
-                NEON_GREEN,
-            );
+            let apply_resp =
+                aorus_full_cta_button(ui, t.btn_apply_runtime_cpu, BTN_GREEN_FILL, NEON_GREEN);
             if apply_resp.clicked() {
                 let res = apply_runtime_cpufreq(
                     &self.runtime_governor,
@@ -2387,7 +2918,12 @@ impl ArgonControlCenterApp {
 
                     ui.add_space(6.0);
                     let r_boost = ui.checkbox(&mut self.boot_oc.arm_boost, t.arm_boost_check);
-                    aorus_tooltip(r_boost, t.arm_boost_check, t.arm_boost_tip, Some("arm_boost=1"));
+                    aorus_tooltip(
+                        r_boost,
+                        t.arm_boost_check,
+                        t.arm_boost_tip,
+                        Some("arm_boost=1"),
+                    );
 
                     let r_turbo = ui.checkbox(&mut self.boot_oc.force_turbo, t.force_turbo_check);
                     aorus_tooltip(
@@ -2409,12 +2945,8 @@ impl ArgonControlCenterApp {
             }
 
             ui.add_space(10.0);
-            let save_resp = aorus_full_cta_button(
-                ui,
-                t.btn_save_firmware_oc,
-                BTN_ORANGE_FILL,
-                AORUS_ORANGE,
-            );
+            let save_resp =
+                aorus_full_cta_button(ui, t.btn_save_firmware_oc, BTN_ORANGE_FILL, AORUS_ORANGE);
             if save_resp.clicked() {
                 let res = save_boot_config(&self.boot_oc);
                 self.log_result("Firmware OC (config.txt)", res);
@@ -2538,12 +3070,8 @@ impl ArgonControlCenterApp {
             );
 
             ui.add_space(10.0);
-            let save_resp = aorus_full_cta_button(
-                ui,
-                t.btn_apply_hw_features,
-                BTN_ORANGE_FILL,
-                AORUS_ORANGE,
-            );
+            let save_resp =
+                aorus_full_cta_button(ui, t.btn_apply_hw_features, BTN_ORANGE_FILL, AORUS_ORANGE);
             if save_resp.clicked() {
                 let res = save_boot_config(&self.boot_oc);
                 self.log_result("Hardware Features (config.txt)", res);
@@ -2570,7 +3098,11 @@ impl ArgonControlCenterApp {
                 } else {
                     (t.oled_preview_badge, TEXT_SECONDARY)
                 };
-                ui.label(RichText::new(format!("({})", badge.0)).size(11.5).color(badge.1));
+                ui.label(
+                    RichText::new(format!("({})", badge.0))
+                        .size(11.5)
+                        .color(badge.1),
+                );
             });
             ui.add_space(4.0);
 
@@ -2650,12 +3182,8 @@ impl ArgonControlCenterApp {
                     });
 
                     ui.add_space(8.0);
-                    let r_oled = aorus_action_button(
-                        ui,
-                        t.btn_save_oled,
-                        BTN_CYAN_FILL,
-                        ARGON_CYAN,
-                    );
+                    let r_oled =
+                        aorus_action_button(ui, t.btn_save_oled, BTN_CYAN_FILL, ARGON_CYAN);
                     if r_oled.clicked() {
                         let res = save_oled_config(&self.oled_cfg);
                         self.log_result("Save OLED Config", res);
@@ -2731,11 +3259,7 @@ impl ArgonControlCenterApp {
                                 t.argononed_role_power,
                                 t.argononed_role_oled,
                             ] {
-                                ui.label(
-                                    RichText::new(role_txt)
-                                        .size(12.0)
-                                        .color(TEXT_PRIMARY),
-                                );
+                                ui.label(RichText::new(role_txt).size(12.0).color(TEXT_PRIMARY));
                                 ui.add_space(2.0);
                             }
                         });
@@ -2792,10 +3316,7 @@ impl ArgonControlCenterApp {
                                         (AORUS_AMBER, t.daemon_boot_disabled)
                                     };
                                 ui.label(
-                                    RichText::new(boot_txt)
-                                        .size(12.0)
-                                        .strong()
-                                        .color(boot_col),
+                                    RichText::new(boot_txt).size(12.0).strong().color(boot_col),
                                 );
                             });
 
@@ -3153,34 +3674,23 @@ impl ArgonControlCenterApp {
                                     let res = self.gpio_lab.set_gpio_output(sel_bcm, true);
                                     self.log_result(&format!("GPIO{sel_bcm} -> HIGH"), res);
                                 }
-                                if aorus_action_button(
-                                    ui,
-                                    t.btn_set_low,
-                                    BTN_CYAN_FILL,
-                                    ARGON_CYAN,
-                                )
-                                .clicked()
+                                if aorus_action_button(ui, t.btn_set_low, BTN_CYAN_FILL, ARGON_CYAN)
+                                    .clicked()
                                 {
                                     let res = self.gpio_lab.set_gpio_output(sel_bcm, false);
                                     self.log_result(&format!("GPIO{sel_bcm} -> LOW"), res);
                                 }
                                 if ui.button(t.btn_set_in_pu).clicked() {
-                                    let res =
-                                        self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Up);
+                                    let res = self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Up);
                                     self.log_result(&format!("GPIO{sel_bcm} -> IN (PU)"), res);
                                 }
                                 if ui.button(t.btn_set_in_pd).clicked() {
-                                    let res =
-                                        self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Down);
+                                    let res = self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Down);
                                     self.log_result(&format!("GPIO{sel_bcm} -> IN (PD)"), res);
                                 }
 
-                                let mut is_watched =
-                                    self.gpio_lab.watched_bcm.contains(&sel_bcm);
-                                if ui
-                                    .checkbox(&mut is_watched, t.chk_watch_waveform)
-                                    .changed()
-                                {
+                                let mut is_watched = self.gpio_lab.watched_bcm.contains(&sel_bcm);
+                                if ui.checkbox(&mut is_watched, t.chk_watch_waveform).changed() {
                                     if is_watched {
                                         if self.gpio_lab.watched_bcm.len() >= 4 {
                                             self.gpio_lab.watched_bcm.remove(0);
@@ -3200,7 +3710,7 @@ impl ArgonControlCenterApp {
     fn draw_single_header_pin(
         &mut self,
         ui: &mut Ui,
-        def: & crate::gpio_lab::PhysicalPinDef,
+        def: &crate::gpio_lab::PhysicalPinDef,
         right_side: bool,
     ) {
         match def.kind {
@@ -3235,12 +3745,7 @@ impl ArgonControlCenterApp {
             }
             HeaderPinKind::IdEeprom => {
                 let txt = format!("#{:02}  🏷 {}", def.phys_num, def.label);
-                ui.label(
-                    RichText::new(txt)
-                        .monospace()
-                        .size(11.5)
-                        .color(ARGON_CYAN),
-                );
+                ui.label(RichText::new(txt).monospace().size(11.5).color(ARGON_CYAN));
             }
             HeaderPinKind::Gpio(bcm) => {
                 let is_sel = self.gpio_lab.selected_bcm == bcm;
@@ -3262,9 +3767,10 @@ impl ArgonControlCenterApp {
 
                 let led = if high { "🟢 1" } else { "⚫ 0" };
                 let btn_txt = if right_side {
+                    // Mirrored so the physical pin number sits next to the header, like the board.
                     format!(
-                        "# {:02} | {} [{}] {} ({})",
-                        def.phys_num, led, dir_str, def.label, pull_str
+                        "({}) {} [{}] {} | # {:02}",
+                        pull_str, def.label, dir_str, led, def.phys_num
                     )
                 } else {
                     format!(
@@ -3511,7 +4017,11 @@ impl ArgonControlCenterApp {
                             ui.checkbox(&mut self.gpio_lab.show_timestamps, "🕒 Time");
                             ui.checkbox(&mut self.gpio_lab.auto_scroll, "⬇ Scroll");
                             ui.checkbox(&mut self.gpio_lab.paused, "⏸ Pause");
-                            if ui.small_button("🗑").on_hover_text(t.btn_clear_logs).clicked() {
+                            if ui
+                                .small_button("🗑")
+                                .on_hover_text(t.btn_clear_logs)
+                                .clicked()
+                            {
                                 self.gpio_lab.entries.clear();
                             }
                         });
@@ -3706,19 +4216,10 @@ fn aorus_tooltip(
             let (bar, _) = ui.allocate_exact_size(Vec2::new(3.0, 14.0), Sense::hover());
             ui.painter()
                 .rect_filled(bar, CornerRadius::same(1), AORUS_ORANGE);
-            ui.label(
-                RichText::new(title)
-                    .size(13.0)
-                    .strong()
-                    .color(AORUS_AMBER),
-            );
+            ui.label(RichText::new(title).size(13.0).strong().color(AORUS_AMBER));
         });
         ui.add_space(3.0);
-        ui.label(
-            RichText::new(description)
-                .size(12.5)
-                .color(TEXT_PRIMARY),
-        );
+        ui.label(RichText::new(description).size(12.5).color(TEXT_PRIMARY));
         if let Some(path) = tech_path {
             ui.add_space(4.0);
             egui::Frame::new()
@@ -3727,12 +4228,7 @@ fn aorus_tooltip(
                 .corner_radius(CornerRadius::same(3))
                 .inner_margin(egui::Margin::symmetric(6, 3))
                 .show(ui, |ui| {
-                    ui.label(
-                        RichText::new(path)
-                            .monospace()
-                            .size(11.0)
-                            .color(ARGON_CYAN),
-                    );
+                    ui.label(RichText::new(path).monospace().size(11.0).color(ARGON_CYAN));
                 });
         }
     })
@@ -3758,16 +4254,11 @@ fn segmented_pill(
     active_fill: Color32,
     active_border: Color32,
 ) -> Response {
-    let btn = egui::Button::new(
-        RichText::new(label)
-            .size(12.0)
-            .strong()
-            .color(if selected {
-                Color32::WHITE
-            } else {
-                TEXT_SECONDARY
-            }),
-    )
+    let btn = egui::Button::new(RichText::new(label).size(12.0).strong().color(if selected {
+        Color32::WHITE
+    } else {
+        TEXT_SECONDARY
+    }))
     .fill(if selected {
         active_fill
     } else {
@@ -3818,8 +4309,7 @@ fn utility_action_row(
                     ui.label(RichText::new(desc).size(11.5).color(TEXT_SECONDARY));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let resp =
-                        aorus_action_button(ui, btn_label, BTN_SLATE_FILL, AORUS_ORANGE);
+                    let resp = aorus_action_button(ui, btn_label, BTN_SLATE_FILL, AORUS_ORANGE);
                     if resp.clicked() {
                         on_click();
                     }
@@ -4112,7 +4602,10 @@ fn draw_multi_telemetry_chart(
         let frac = i as f32 / 4.0;
         let y = plot_rect.bottom() - frac * plot_rect.height();
         painter.line_segment(
-            [Pos2::new(plot_rect.left(), y), Pos2::new(plot_rect.right(), y)],
+            [
+                Pos2::new(plot_rect.left(), y),
+                Pos2::new(plot_rect.right(), y),
+            ],
             Stroke::new(1.0_f32, Color32::from_rgb(30, 41, 59)),
         );
         painter.text(
@@ -4134,8 +4627,7 @@ fn draw_multi_telemetry_chart(
             .enumerate()
             .map(|(i, &val)| {
                 let x = plot_rect.left() + (i as f32 / (n - 1) as f32) * plot_rect.width();
-                let y =
-                    plot_rect.bottom() - (val.clamp(0.0, 100.0) / 100.0) * plot_rect.height();
+                let y = plot_rect.bottom() - (val.clamp(0.0, 100.0) / 100.0) * plot_rect.height();
                 Pos2::new(x, y)
             })
             .collect();
@@ -4149,7 +4641,7 @@ fn draw_multi_telemetry_chart(
 
 fn draw_interactive_fan_curve(
     ui: &mut Ui,
-    points: &mut Vec<FanCurvePoint>,
+    points: &mut [FanCurvePoint],
     dragging_idx: &mut Option<usize>,
     cur_temp_c: f32,
 ) {
@@ -4226,11 +4718,18 @@ fn draw_interactive_fan_curve(
 
     let cur_x = to_screen(cur_temp_c, 0.0).x;
     painter.line_segment(
-        [Pos2::new(cur_x, plot.top()), Pos2::new(cur_x, plot.bottom())],
+        [
+            Pos2::new(cur_x, plot.top()),
+            Pos2::new(cur_x, plot.bottom()),
+        ],
         Stroke::new(1.5_f32, ARGON_CYAN),
     );
 
-    points.sort_by(|a, b| a.temp_c.partial_cmp(&b.temp_c).unwrap_or(std::cmp::Ordering::Equal));
+    points.sort_by(|a, b| {
+        a.temp_c
+            .partial_cmp(&b.temp_c)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if let Some(pointer_pos) = response.interact_pointer_pos() {
         if response.drag_started() {
@@ -4290,7 +4789,13 @@ fn draw_interactive_fan_curve(
     }
 }
 
-fn draw_progress_bar_row(ui: &mut Ui, label: &str, fraction: f32, right_text: &str, color: Color32) {
+fn draw_progress_bar_row(
+    ui: &mut Ui,
+    label: &str,
+    fraction: f32,
+    right_text: &str,
+    color: Color32,
+) {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(label).size(12.5).strong().color(TEXT_PRIMARY));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

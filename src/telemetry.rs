@@ -85,6 +85,9 @@ pub struct TelemetryState {
     pub cpu_history: VecDeque<f32>,
     pub fan_history: VecDeque<f32>,
     pub freq_history: VecDeque<f32>,
+    pub ram_history: VecDeque<f32>,
+    pub net_rx_history: VecDeque<f32>,
+    pub net_tx_history: VecDeque<f32>,
 
     prev_cpu_samples: HashMap<String, CpuStatSample>,
     prev_net_bytes: Option<(u64, u64, Instant)>,
@@ -157,6 +160,9 @@ impl TelemetryState {
             cpu_history: VecDeque::from(vec![0.0; HISTORY_LEN]),
             fan_history: VecDeque::from(vec![0.0; HISTORY_LEN]),
             freq_history: VecDeque::from(vec![1800.0; HISTORY_LEN]),
+            ram_history: VecDeque::from(vec![12.0; HISTORY_LEN]),
+            net_rx_history: VecDeque::from(vec![0.0; HISTORY_LEN]),
+            net_tx_history: VecDeque::from(vec![0.0; HISTORY_LEN]),
             prev_cpu_samples: read_proc_stat(),
             prev_net_bytes: None,
             last_slow_refresh: None,
@@ -294,6 +300,9 @@ impl TelemetryState {
         push_history(&mut self.cpu_history, self.cpu_total_usage_pct);
         push_history(&mut self.fan_history, self.target_fan_speed_pct as f32);
         push_history(&mut self.freq_history, self.cpu_cur_freq_mhz as f32);
+        push_history(&mut self.ram_history, self.ram_usage_pct);
+        push_history(&mut self.net_rx_history, self.net_rx_kbps);
+        push_history(&mut self.net_tx_history, self.net_tx_kbps);
 
         // 9. Slow refresh (every 5 seconds: disks, RAID, service status, IP)
         let should_slow_refresh = match self.last_slow_refresh {
