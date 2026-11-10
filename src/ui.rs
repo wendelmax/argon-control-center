@@ -15,10 +15,11 @@ use crate::overclock::{
     update_boot_config_str, BootOcConfig, OcPreset,
 };
 use crate::privileged::is_root;
+use crate::settings::{ColorScheme, DashboardStyle, Layout};
 use crate::telemetry::TelemetryState;
 use crate::theme::{
     configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart,
-    draw_kde_donut_chart_sized, set_ui_colors, uc, KdeBreezePalette, ThemeModel, UiColors,
+    draw_kde_donut_chart_sized, set_ui_colors, uc, KdeBreezePalette, UiColors,
 };
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Response, RichText, Sense,
@@ -29,14 +30,6 @@ use std::f32::consts::PI;
 use std::fs;
 use std::time::{Duration, Instant};
 
-// High-Contrast Gigabyte AORUS Palette (WCAG AAA readable)
-
-// Accent Colors
-
-// High-Contrast Button Fills (paired with pure WHITE text)
-
-// High-Contrast Typography Colors
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActiveTab {
     Dashboard,
@@ -45,6 +38,7 @@ pub enum ActiveTab {
     Features,
     GpioLab,
     ServicesAndConfig,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +61,10 @@ pub enum ConfigPreviewTab {
 
 pub struct ArgonControlCenterApp {
     pub lang: Language,
-    pub theme_model: ThemeModel,
+    pub layout: Layout,
+    pub colors: ColorScheme,
+    pub dashboard: DashboardStyle,
+    pub ui_scale: f32,
     pub kde_palette: KdeBreezePalette,
     palette_rx: Option<std::sync::mpsc::Receiver<KdeBreezePalette>>,
     last_palette_check: Instant,
@@ -94,7 +91,10 @@ pub struct ArgonControlCenterApp {
     pub runtime_boost: bool,
 
     // Units & OLED
+    /// Display unit in the app (saved preference).
     pub temp_unit: TempUnit,
+    /// Unit configured for the Argon daemon / OLED (`/etc/argonunits.conf`).
+    pub argon_unit: TempUnit,
     pub oled_cfg: OledConfig,
     pub oled_hw_present: bool,
 
@@ -113,11 +113,7 @@ impl ArgonControlCenterApp {
         let prefs = crate::settings::load();
         let initial_lang = lang_override.unwrap_or(prefs.language);
         let kde_palette = KdeBreezePalette::load_from_system();
-        if prefs.theme == ThemeModel::AorusGaming {
-            configure_aorus_style(&cc.egui_ctx);
-        } else {
-            configure_kde_breeze_style(&cc.egui_ctx, &kde_palette);
-        }
+        cc.egui_ctx.set_zoom_factor(prefs.ui_scale);
 
         let cpu_fan_curve = load_fan_curve(CPU_FAN_CONF, FanPreset::BalancedDefault.points());
         let hdd_fan_curve = load_fan_curve(
@@ -141,7 +137,7 @@ impl ArgonControlCenterApp {
         telemetry.refresh(&cpu_fan_curve);
 
         let boot_oc = load_boot_config();
-        let temp_unit = load_temp_unit();
+        let argon_unit = load_temp_unit();
         let oled_cfg = load_oled_config();
         let oled_hw_present = is_oled_hardware_installed();
 
@@ -161,9 +157,12 @@ impl ArgonControlCenterApp {
             cpu_fan_curve.len()
         ));
 
-        Self {
+        let app = Self {
             lang: initial_lang,
-            theme_model: prefs.theme,
+            layout: prefs.layout,
+            colors: prefs.colors,
+            dashboard: prefs.dashboard,
+            ui_scale: prefs.ui_scale,
             kde_palette,
             palette_rx: None,
             last_palette_check: Instant::now(),
@@ -184,7 +183,8 @@ impl ArgonControlCenterApp {
             runtime_min_mhz,
             runtime_max_mhz,
             runtime_boost,
-            temp_unit,
+            temp_unit: prefs.temp_unit,
+            argon_unit,
             oled_cfg,
             oled_hw_present,
             config_preview_tab: ConfigPreviewTab::ArgonFanConf,
@@ -192,6 +192,25 @@ impl ArgonControlCenterApp {
             status_message: None,
             status_is_error: false,
             action_logs: logs,
+        };
+        app.apply_style(&cc.egui_ctx);
+        app
+    }
+
+    /// Palette used for drawing: the desktop palette, or the AORUS palette expressed in the
+    /// same shape so every layout and dashboard style supports both color schemes.
+    pub fn active_palette(&self) -> KdeBreezePalette {
+        match self.colors {
+            ColorScheme::System => self.kde_palette,
+            ColorScheme::Aorus => KdeBreezePalette::aorus(),
+        }
+    }
+
+    /// Applies the egui style for the current color scheme.
+    pub fn apply_style(&self, ctx: &egui::Context) {
+        match self.colors {
+            ColorScheme::System => configure_kde_breeze_style(ctx, &self.kde_palette),
+            ColorScheme::Aorus => configure_aorus_style(ctx),
         }
     }
 
@@ -286,10 +305,9 @@ pub fn configure_aorus_style(ctx: &egui::Context) {
 
 impl eframe::App for ArgonControlCenterApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        set_ui_colors(if self.theme_model == ThemeModel::AorusGaming {
-            UiColors::AORUS
-        } else {
-            UiColors::from_palette(&self.kde_palette)
+        set_ui_colors(match self.colors {
+            ColorScheme::Aorus => UiColors::AORUS,
+            ColorScheme::System => UiColors::from_palette(&self.kde_palette),
         });
         // Poll serial RX continuously when on GPIO Lab tab or connected
         if self.gpio_lab.serial_connected {
@@ -314,11 +332,12 @@ impl eframe::App for ArgonControlCenterApp {
         self.poll_system_palette(ctx);
         self.persist_prefs_if_changed();
 
-        match self.theme_model {
-            ThemeModel::KdeCompactOverview | ThemeModel::KdeBreeze => {
-                let pal = self.kde_palette;
-                // 1. Kirigami Global Drawer Left Sidebar (on windows >= 680px wide)
-                if ctx.screen_rect().width() >= 680.0 {
+        let pal = self.active_palette();
+        let wide = ctx.screen_rect().width() >= SIDEBAR_MIN_WIDTH;
+        match self.layout {
+            Layout::Sidebar => {
+                // Kirigami-style left navigation; on narrow windows the header shows a tab strip.
+                if wide {
                     egui::SidePanel::left("kde_kirigami_sidebar")
                         .resizable(false)
                         .exact_width(220.0)
@@ -332,8 +351,6 @@ impl eframe::App for ArgonControlCenterApp {
                             self.draw_kde_sidebar(ui, ctx);
                         });
                 }
-
-                // 2. Contextual Kirigami Page Header Bar
                 egui::TopBottomPanel::top("kde_page_header")
                     .frame(
                         egui::Frame::new()
@@ -344,167 +361,73 @@ impl eframe::App for ArgonControlCenterApp {
                     .show(ctx, |ui| {
                         self.draw_kde_page_header(ui, ctx);
                     });
-
-                // 3. Breeze Bottom Status Strip
-                egui::TopBottomPanel::bottom("kde_bottom_bar")
-                    .frame(
-                        egui::Frame::new()
-                            .fill(pal.window_alt_bg)
-                            .stroke(Stroke::new(1.0_f32, pal.border_subtle))
-                            .inner_margin(egui::Margin::symmetric(14, 5)),
-                    )
-                    .show(ctx, |ui| {
-                        self.draw_bottom_bar(ui);
-                    });
-
-                // 4. Main Breeze Window Content Area
-                egui::CentralPanel::default()
-                    .frame(
-                        egui::Frame::new()
-                            .fill(pal.window_bg)
-                            .inner_margin(egui::Margin::symmetric(14, 10)),
-                    )
-                    .show(ctx, |ui| {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| match self.active_tab {
-                                ActiveTab::Dashboard => {
-                                    if self.theme_model == ThemeModel::KdeCompactOverview {
-                                        self.draw_kde_compact_overview_tab(ui);
-                                    } else {
-                                        self.draw_kde_dashboard_tab(ui);
-                                    }
-                                }
-                                ActiveTab::SmartFan => self.draw_smart_fan_tab(ui),
-                                ActiveTab::Overclocking => self.draw_overclocking_tab(ui),
-                                ActiveTab::Features => self.draw_features_tab(ui),
-                                ActiveTab::GpioLab => self.draw_gpio_lab_tab(ui),
-                                ActiveTab::ServicesAndConfig => self.draw_services_tab(ui),
-                            });
-                    });
             }
-            ThemeModel::BreezeClassicLayout | ThemeModel::AorusGaming => {
-                let is_breeze_pal = self.theme_model == ThemeModel::BreezeClassicLayout;
-                let top_fill = if is_breeze_pal {
-                    self.kde_palette.header_bg
-                } else {
-                    uc().bg_panel
-                };
-                let body_fill = if is_breeze_pal {
-                    self.kde_palette.window_bg
-                } else {
-                    uc().bg_dark
-                };
-                let bdr = if is_breeze_pal {
-                    self.kde_palette.border_subtle
-                } else {
-                    uc().border_subtle
-                };
-
+            Layout::TopTabs => {
                 egui::TopBottomPanel::top("aorus_top_bar")
                     .frame(
                         egui::Frame::new()
-                            .fill(top_fill)
-                            .stroke(Stroke::new(1.0_f32, bdr))
+                            .fill(pal.header_bg)
+                            .stroke(Stroke::new(1.0_f32, pal.border_subtle))
                             .inner_margin(egui::Margin::symmetric(14, 8)),
                     )
                     .show(ctx, |ui| {
                         self.draw_top_bar(ui, ctx);
                     });
-
-                egui::TopBottomPanel::bottom("aorus_bottom_bar")
-                    .frame(
-                        egui::Frame::new()
-                            .fill(top_fill)
-                            .stroke(Stroke::new(1.0_f32, bdr))
-                            .inner_margin(egui::Margin::symmetric(14, 6)),
-                    )
-                    .show(ctx, |ui| {
-                        self.draw_bottom_bar(ui);
-                    });
-
-                egui::CentralPanel::default()
-                    .frame(
-                        egui::Frame::new()
-                            .fill(body_fill)
-                            .inner_margin(egui::Margin::symmetric(14, 12)),
-                    )
-                    .show(ctx, |ui| {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| match self.active_tab {
-                                ActiveTab::Dashboard => self.draw_dashboard_tab(ui),
-                                ActiveTab::SmartFan => self.draw_smart_fan_tab(ui),
-                                ActiveTab::Overclocking => self.draw_overclocking_tab(ui),
-                                ActiveTab::Features => self.draw_features_tab(ui),
-                                ActiveTab::GpioLab => self.draw_gpio_lab_tab(ui),
-                                ActiveTab::ServicesAndConfig => self.draw_services_tab(ui),
-                            });
-                    });
             }
         }
+
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(
+                egui::Frame::new()
+                    .fill(pal.window_alt_bg)
+                    .stroke(Stroke::new(1.0_f32, pal.border_subtle))
+                    .inner_margin(egui::Margin::symmetric(14, 5)),
+            )
+            .show(ctx, |ui| {
+                self.draw_bottom_bar(ui);
+            });
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(pal.window_bg)
+                    .inner_margin(egui::Margin::symmetric(14, 10)),
+            )
+            .show(ctx, |ui| {
+                // Vertical scrolling for long pages; horizontal only as a fallback when a block
+                // cannot shrink further on very narrow windows (instead of clipping it).
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| match self.active_tab {
+                        ActiveTab::Dashboard => match self.dashboard {
+                            DashboardStyle::Compact => self.draw_kde_compact_overview_tab(ui),
+                            DashboardStyle::Charts => self.draw_kde_dashboard_tab(ui),
+                            DashboardStyle::Gauges => self.draw_dashboard_tab(ui),
+                        },
+                        ActiveTab::SmartFan => self.draw_smart_fan_tab(ui),
+                        ActiveTab::Overclocking => self.draw_overclocking_tab(ui),
+                        ActiveTab::Features => self.draw_features_tab(ui),
+                        ActiveTab::GpioLab => self.draw_gpio_lab_tab(ui),
+                        ActiveTab::ServicesAndConfig => self.draw_services_tab(ui),
+                        ActiveTab::Settings => self.draw_settings_tab(ui, ctx),
+                    });
+            });
     }
 }
 
-impl ArgonControlCenterApp {
-    fn draw_theme_switcher_pills(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let t = texts(self.lang);
-        for (model, label, fill, border) in [
-            (
-                ThemeModel::AorusGaming,
-                t.theme_aorus_label,
-                uc().btn_orange,
-                uc().orange,
-            ),
-            (
-                ThemeModel::BreezeClassicLayout,
-                t.theme_breeze_classic_label,
-                Color32::from_rgb(38, 86, 128),
-                self.kde_palette.focus_blue,
-            ),
-            (
-                ThemeModel::KdeBreeze,
-                t.theme_kde_label,
-                Color32::from_rgb(24, 98, 145),
-                self.kde_palette.focus_blue,
-            ),
-            (
-                ThemeModel::KdeCompactOverview,
-                t.theme_kde_compact_label,
-                Color32::from_rgb(18, 115, 135),
-                self.kde_palette.positive_green,
-            ),
-        ] {
-            let is_sel = self.theme_model == model;
-            let resp = segmented_pill(ui, label, is_sel, fill, border);
-            if resp.clicked() && !is_sel {
-                self.theme_model = model;
-                match model {
-                    ThemeModel::KdeCompactOverview
-                    | ThemeModel::KdeBreeze
-                    | ThemeModel::BreezeClassicLayout => {
-                        self.kde_palette = KdeBreezePalette::load_from_system();
-                        configure_kde_breeze_style(ctx, &self.kde_palette);
-                    }
-                    ThemeModel::AorusGaming => {
-                        configure_aorus_style(ctx);
-                    }
-                }
-            }
-            aorus_tooltip(
-                resp,
-                "Theme Model",
-                t.theme_selector_tip,
-                Some(&self.kde_palette.describe()),
-            );
-        }
-    }
+/// Below this width the sidebar layout hides the sidebar and shows a tab strip in the header.
+const SIDEBAR_MIN_WIDTH: f32 = 760.0;
 
-    /// Saves language / theme / tab to `settings.json` whenever one of them changes.
+impl ArgonControlCenterApp {
+    /// Saves the preferences to `settings.json` whenever one of them changes.
     fn persist_prefs_if_changed(&mut self) {
         let now = crate::settings::Settings {
             language: self.lang,
-            theme: self.theme_model,
+            layout: self.layout,
+            colors: self.colors,
+            dashboard: self.dashboard,
+            temp_unit: self.temp_unit,
+            ui_scale: self.ui_scale,
             tab: self.active_tab,
         };
         if now != self.saved_prefs {
@@ -525,7 +448,7 @@ impl ArgonControlCenterApp {
                     self.palette_rx = None;
                     if !pal.same_colors(&self.kde_palette) {
                         self.kde_palette = pal;
-                        if self.theme_model != ThemeModel::AorusGaming {
+                        if self.colors == ColorScheme::System {
                             configure_kde_breeze_style(ctx, &self.kde_palette);
                         }
                         ctx.request_repaint();
@@ -536,7 +459,7 @@ impl ArgonControlCenterApp {
             }
             return;
         }
-        if self.theme_model == ThemeModel::AorusGaming
+        if self.colors == ColorScheme::Aorus
             || self.last_palette_check.elapsed() < Duration::from_secs(4)
         {
             return;
@@ -553,7 +476,7 @@ impl ArgonControlCenterApp {
 
     fn draw_kde_sidebar(&mut self, ui: &mut Ui, _ctx: &egui::Context) {
         let t = texts(self.lang);
-        let pal = self.kde_palette;
+        let pal = self.active_palette();
 
         // Sidebar App Branding Header
         ui.horizontal(|ui| {
@@ -570,13 +493,13 @@ impl ArgonControlCenterApp {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.label(
-                    RichText::new("Argon Monitor")
+                    RichText::new("Argon")
                         .size(14.5)
                         .strong()
                         .color(pal.text_normal),
                 );
                 ui.label(
-                    RichText::new("KDE Breeze Edition")
+                    RichText::new("Control Center")
                         .size(11.0)
                         .color(pal.focus_blue),
                 );
@@ -588,22 +511,7 @@ impl ArgonControlCenterApp {
         ui.add_space(4.0);
 
         // Kirigami Navigation List
-        let tabs = [
-            (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
-            (ActiveTab::SmartFan, t.tab_smart_fan, t.tab_smart_fan_tip),
-            (
-                ActiveTab::Overclocking,
-                t.tab_overclock,
-                t.tab_overclock_tip,
-            ),
-            (ActiveTab::Features, t.tab_features, t.tab_features_tip),
-            (ActiveTab::GpioLab, t.tab_gpio_lab, t.tab_gpio_lab_tip),
-            (
-                ActiveTab::ServicesAndConfig,
-                t.tab_services,
-                t.tab_services_tip,
-            ),
-        ];
+        let tabs = nav_tabs(self.lang);
 
         for (tab, label, tip) in tabs {
             let selected = self.active_tab == tab;
@@ -719,240 +627,152 @@ impl ArgonControlCenterApp {
     }
 
     fn draw_kde_page_header(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let t = texts(self.lang);
-        let pal = self.kde_palette;
+        let pal = self.active_palette();
+        let title = nav_tabs(self.lang)
+            .iter()
+            .find(|(tab, _, _)| *tab == self.active_tab)
+            .map(|(_, label, _)| *label)
+            .unwrap_or_default();
 
-        let active_title = match self.active_tab {
-            ActiveTab::Dashboard => t.tab_dashboard,
-            ActiveTab::SmartFan => t.tab_smart_fan,
-            ActiveTab::Overclocking => t.tab_overclock,
-            ActiveTab::Features => t.tab_features,
-            ActiveTab::GpioLab => t.tab_gpio_lab,
-            ActiveTab::ServicesAndConfig => t.tab_services,
-        };
-
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             ui.label(
-                RichText::new(active_title)
+                RichText::new(title)
                     .size(17.0)
                     .strong()
                     .color(pal.text_normal),
             );
-
-            // Fallback compact tab selector when window < 680px (sidebar hidden)
-            if ctx.screen_rect().width() < 680.0 {
-                ui.separator();
-                for (tab, short) in [
-                    (ActiveTab::Dashboard, "📊"),
-                    (ActiveTab::SmartFan, "🌀"),
-                    (ActiveTab::Overclocking, "🔥"),
-                    (ActiveTab::Features, "🛠"),
-                    (ActiveTab::GpioLab, "🔬"),
-                    (ActiveTab::ServicesAndConfig, "⚙"),
-                ] {
-                    let is_sel = self.active_tab == tab;
-                    if segmented_pill(
-                        ui,
-                        short,
-                        is_sel,
-                        Color32::from_rgb(28, 108, 156),
-                        pal.focus_blue,
-                    )
-                    .clicked()
-                    {
-                        self.active_tab = tab;
-                    }
-                }
-            }
-
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                egui::Frame::new()
-                    .fill(pal.view_alt_bg)
-                    .stroke(Stroke::new(1.0_f32, pal.border_subtle))
-                    .corner_radius(CornerRadius::same(4))
-                    .inner_margin(egui::Margin::symmetric(8, 3))
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-
-                        // 1. Temp Unit (°C | °F)
-                        for (u_opt, u_lbl) in
-                            [(TempUnit::Fahrenheit, "°F"), (TempUnit::Celsius, "°C")]
-                        {
-                            let is_sel = self.temp_unit == u_opt;
-                            let resp = segmented_pill(
-                                ui,
-                                u_lbl,
-                                is_sel,
-                                Color32::from_rgb(28, 108, 156),
-                                pal.focus_blue,
-                            );
-                            if resp.clicked() && !is_sel {
-                                self.temp_unit = u_opt;
-                                let res = save_temp_unit(u_opt);
-                                self.log_result("Temp Unit", res);
-                            }
-                            aorus_tooltip(
-                                resp,
-                                "Temperature Unit",
-                                t.temp_unit_tip,
-                                Some("/etc/argonunits.conf"),
-                            );
-                        }
-
-                        ui.separator();
-
-                        // 2. Language (PT | EN)
-                        for (lang_opt, short_lbl) in
-                            [(Language::EnUs, "🇺🇸 EN"), (Language::PtBr, "🇧🇷 PT")]
-                        {
-                            let is_sel = self.lang == lang_opt;
-                            let resp = segmented_pill(
-                                ui,
-                                short_lbl,
-                                is_sel,
-                                Color32::from_rgb(28, 108, 156),
-                                pal.focus_blue,
-                            );
-                            if resp.clicked() && !is_sel {
-                                self.lang = lang_opt;
-                            }
-                            aorus_tooltip(resp, "Language / Idioma", t.lang_selector_tip, None);
-                        }
-
-                        ui.separator();
-
-                        // 3. Theme Model Switcher (KDE Breeze | AORUS v1)
-                        self.draw_theme_switcher_pills(ui, ctx);
-                    });
+                self.settings_shortcut(ui);
             });
+        });
+
+        // Narrow window: the sidebar is hidden, so show a wrapping tab strip instead.
+        if ctx.screen_rect().width() < SIDEBAR_MIN_WIDTH {
+            ui.add_space(4.0);
+            self.draw_tab_strip(ui, false);
+        }
+    }
+
+    /// Gear button that opens the Settings page (shown in every header).
+    fn settings_shortcut(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let selected = self.active_tab == ActiveTab::Settings;
+        let resp = segmented_pill(ui, "⚙", selected, uc().btn_cyan, uc().cyan);
+        if resp.clicked() {
+            self.active_tab = ActiveTab::Settings;
+        }
+        resp.on_hover_text(t.tab_settings_tip);
+    }
+
+    /// Wrapping row of navigation buttons. `large` uses the wide classic buttons.
+    fn draw_tab_strip(&mut self, ui: &mut Ui, large: bool) {
+        let accent_fill = uc().btn_cyan;
+        let accent = uc().cyan;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            for (tab, title, tip) in nav_tabs(self.lang) {
+                if !large && tab == ActiveTab::Settings {
+                    continue; // already reachable from the gear button
+                }
+                let is_active = self.active_tab == tab;
+                let text = RichText::new(title)
+                    .size(if large { 13.0 } else { 12.0 })
+                    .strong()
+                    .color(if is_active {
+                        crate::system_colors::on_color(accent_fill)
+                    } else {
+                        uc().text_secondary
+                    });
+                let mut btn = egui::Button::new(text)
+                    .fill(if is_active {
+                        accent_fill
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .stroke(if is_active {
+                        Stroke::new(1.5_f32, accent)
+                    } else {
+                        Stroke::NONE
+                    });
+                if large {
+                    btn = btn.min_size(Vec2::new(120.0, 30.0));
+                }
+                let resp = ui.add(btn);
+                if resp.clicked() {
+                    self.active_tab = tab;
+                }
+                aorus_tooltip(resp, title, tip, None);
+            }
         });
     }
 
     fn draw_top_bar(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let t = texts(self.lang);
+        let narrow = ctx.screen_rect().width() < SIDEBAR_MIN_WIDTH;
 
-        // Top Row: Brand Title + Unified Header Utility Strip (Temp Unit | Language | Daemon Badge)
-        ui.horizontal_wrapped(|ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(32.0, 32.0), Sense::hover());
+        ui.horizontal(|ui| {
+            let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), Sense::hover());
             let painter = ui.painter();
             painter.rect_filled(logo_rect, CornerRadius::same(6), uc().btn_orange);
-            painter.rect_stroke(
-                logo_rect,
-                CornerRadius::same(6),
-                Stroke::new(1.5_f32, uc().orange),
-                StrokeKind::Inside,
-            );
             painter.text(
                 logo_rect.center(),
                 Align2::CENTER_CENTER,
                 "⚡",
-                FontId::new(18.0, FontFamily::Proportional),
+                FontId::new(17.0, FontFamily::Proportional),
                 Color32::WHITE,
             );
-
             ui.label(
                 RichText::new("ARGON")
-                    .size(18.5)
+                    .size(18.0)
                     .strong()
-                    .color(Color32::WHITE),
+                    .color(uc().text_primary),
             );
             ui.label(
                 RichText::new("CONTROL CENTER")
-                    .size(18.5)
+                    .size(18.0)
                     .strong()
                     .color(uc().orange),
             );
-            let board = crate::board::current();
-            ui.label(
-                RichText::new(format!("• {}", board.summary()))
-                    .size(12.5)
-                    .color(uc().text_secondary),
-            )
-            .on_hover_text(format!("{}\n\n{}", t.board_detect_tip, board.details()));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Unified Utility Pill Container
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(6))
-                    .inner_margin(egui::Margin::symmetric(8, 4))
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-
-                        // 1. Daemon Status Badge with Click-to-Manage & Tooltip
-                        let (daemon_col, daemon_txt) = if self.telemetry.argon_service_active {
-                            (uc().green, t.daemon_online)
-                        } else {
-                            (uc().red, t.daemon_offline)
-                        };
-                        let badge_resp = ui.add(
-                            egui::Button::new(
-                                RichText::new(daemon_txt)
-                                    .size(11.5)
-                                    .strong()
-                                    .color(daemon_col),
-                            )
-                            .frame(false),
-                        );
-                        if badge_resp.clicked() {
-                            self.active_tab = ActiveTab::ServicesAndConfig;
-                        }
-                        aorus_tooltip(
-                            badge_resp,
-                            "Systemd Daemon (argononed.service)",
-                            t.daemon_badge_tip,
-                            Some("/lib/systemd/system/argononed.service"),
-                        );
-
-                        ui.separator();
-
-                        // 2. Compact Language Segmented Switch (PT | EN)
-                        for (lang_opt, short_lbl) in
-                            [(Language::EnUs, "🇺🇸 EN"), (Language::PtBr, "🇧🇷 PT")]
-                        {
-                            let is_sel = self.lang == lang_opt;
-                            let resp =
-                                segmented_pill(ui, short_lbl, is_sel, uc().btn_cyan, uc().cyan);
-                            if resp.clicked() && !is_sel {
-                                self.lang = lang_opt;
-                            }
-                            aorus_tooltip(resp, "Language / Idioma", t.lang_selector_tip, None);
-                        }
-
-                        ui.separator();
-
-                        // 3. Compact Temp Unit Segmented Switch (°C | °F)
-                        for (u_opt, u_lbl) in
-                            [(TempUnit::Fahrenheit, "°F"), (TempUnit::Celsius, "°C")]
-                        {
-                            let is_sel = self.temp_unit == u_opt;
-                            let resp =
-                                segmented_pill(ui, u_lbl, is_sel, uc().btn_orange, uc().orange);
-                            if resp.clicked() && !is_sel {
-                                self.temp_unit = u_opt;
-                                let res = save_temp_unit(u_opt);
-                                self.log_result("Temp Unit", res);
-                            }
-                            aorus_tooltip(
-                                resp,
-                                "Temperature Unit",
-                                t.temp_unit_tip,
-                                Some("/etc/argonunits.conf"),
-                            );
-                        }
-
-                        ui.separator();
-
-                        // 4. Theme Model Switcher (KDE Breeze | AORUS v1)
-                        self.draw_theme_switcher_pills(ui, ctx);
-                    });
+                self.settings_shortcut(ui);
+                let (daemon_col, daemon_txt) = if self.telemetry.argon_service_active {
+                    (uc().green, t.daemon_online)
+                } else {
+                    (uc().red, t.daemon_offline)
+                };
+                let badge_resp = ui.add(
+                    egui::Button::new(
+                        RichText::new(daemon_txt)
+                            .size(11.5)
+                            .strong()
+                            .color(daemon_col),
+                    )
+                    .frame(false),
+                );
+                if badge_resp.clicked() {
+                    self.active_tab = ActiveTab::ServicesAndConfig;
+                }
+                aorus_tooltip(
+                    badge_resp,
+                    "Systemd Daemon (argononed.service)",
+                    t.daemon_badge_tip,
+                    Some("/lib/systemd/system/argononed.service"),
+                );
             });
         });
 
-        ui.add_space(6.0);
+        if !narrow {
+            let board = crate::board::current();
+            ui.label(
+                RichText::new(board.summary())
+                    .size(12.0)
+                    .color(uc().text_secondary),
+            )
+            .on_hover_text(format!("{}\n\n{}", t.board_detect_tip, board.details()));
+        }
 
-        // Second Row: Unified Segmented Navigation Strip
+        ui.add_space(6.0);
         egui::Frame::new()
             .fill(uc().bg_subgroup)
             .stroke(Stroke::new(1.0_f32, uc().border_subtle))
@@ -960,57 +780,7 @@ impl ArgonControlCenterApp {
             .inner_margin(egui::Margin::symmetric(6, 4))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let tabs = [
-                        (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
-                        (ActiveTab::SmartFan, t.tab_smart_fan, t.tab_smart_fan_tip),
-                        (
-                            ActiveTab::Overclocking,
-                            t.tab_overclock,
-                            t.tab_overclock_tip,
-                        ),
-                        (ActiveTab::Features, t.tab_features, t.tab_features_tip),
-                        (ActiveTab::GpioLab, t.tab_gpio_lab, t.tab_gpio_lab_tip),
-                        (
-                            ActiveTab::ServicesAndConfig,
-                            t.tab_services,
-                            t.tab_services_tip,
-                        ),
-                    ];
-
-                    for (tab, title, tip) in tabs {
-                        let is_active = self.active_tab == tab;
-                        let fill = if is_active {
-                            uc().btn_orange
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        let stroke = if is_active {
-                            Stroke::new(1.5_f32, uc().orange)
-                        } else {
-                            Stroke::NONE
-                        };
-
-                        let btn =
-                            egui::Button::new(RichText::new(title).size(13.0).strong().color(
-                                if is_active {
-                                    Color32::WHITE
-                                } else {
-                                    uc().text_secondary
-                                },
-                            ))
-                            .fill(fill)
-                            .stroke(stroke)
-                            .min_size(Vec2::new(135.0, 30.0));
-
-                        let resp = ui.add(btn);
-                        if resp.clicked() {
-                            self.active_tab = tab;
-                        }
-                        aorus_tooltip(resp, title, tip, None);
-                    }
-                });
+                self.draw_tab_strip(ui, !narrow);
             });
     }
 
@@ -1054,10 +824,218 @@ impl ArgonControlCenterApp {
     // =========================================================================
     // TAB 1A: KDE COMPACT ALL-IN-ONE OVERVIEW (NO-SCROLL TELEMETRY + CONTROLS)
     // =========================================================================
-    fn draw_kde_compact_overview_tab(&mut self, ui: &mut Ui) {
+    fn compact_fan_controls(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
         let lang = self.lang;
-        let pal = self.kde_palette;
+        let pal = self.active_palette();
+        // Column 1: Smart Fan Direct Controls
+        ui.label(
+            RichText::new("🌀 Smart Fan & I2C PWM")
+                .size(12.5)
+                .strong()
+                .color(pal.focus_blue),
+        );
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            for (lbl, spd) in [
+                (t.quick_auto, None),
+                ("0%", Some(0u8)),
+                ("35%", Some(35)),
+                ("65%", Some(65)),
+                ("100%", Some(100)),
+            ] {
+                let is_sel = self.telemetry.manual_fan_override == spd;
+                if segmented_pill(
+                    ui,
+                    lbl,
+                    is_sel,
+                    Color32::from_rgb(24, 98, 145),
+                    pal.focus_blue,
+                )
+                .clicked()
+                {
+                    self.telemetry.manual_fan_override = spd;
+                    match spd {
+                        Some(pct) => {
+                            self.manual_fan_slider = pct;
+                            let res = set_immediate_fan_speed(pct);
+                            self.log_result(&format!("Fan PWM {pct}%"), res);
+                        }
+                        None => {
+                            let res = control_argononed_service("restart");
+                            self.log_result("Fan Auto Curve", res);
+                        }
+                    }
+                }
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            egui::ComboBox::from_id_salt("compact_fan_preset")
+                .width(145.0)
+                .selected_text(self.selected_fan_preset.label(lang))
+                .show_ui(ui, |ui| {
+                    for p in [
+                        FanPreset::Silent,
+                        FanPreset::BalancedDefault,
+                        FanPreset::Performance,
+                        FanPreset::AlwaysOnTurbo,
+                    ] {
+                        if ui
+                            .selectable_label(self.selected_fan_preset == p, p.label(lang))
+                            .clicked()
+                        {
+                            self.selected_fan_preset = p;
+                            self.cpu_fan_curve = p.points();
+                        }
+                    }
+                });
+            if aorus_action_button(ui, "💾", Color32::from_rgb(18, 115, 72), pal.positive_green)
+                .on_hover_text(t.btn_save_fan_curve_tip)
+                .clicked()
+            {
+                let res = save_fan_curve(CPU_FAN_CONF, &self.cpu_fan_curve, "CPU");
+                self.log_result("Save CPU Fan Curve", res);
+            }
+        });
+    }
+    fn compact_oc_controls(&mut self, ui: &mut Ui) {
+        let pal = self.active_palette();
+        // Column 2: Overclocking & Live CPUFreq Controls
+        ui.label(
+            RichText::new("🔥 Overclock & CPUFreq")
+                .size(12.5)
+                .strong()
+                .color(pal.neutral_orange),
+        );
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            for preset in [
+                OcPreset::EcoPowerSave,
+                OcPreset::StockBoost,
+                OcPreset::OcGaming,
+                OcPreset::OcExtreme,
+            ] {
+                let is_sel = self.selected_oc_preset == preset;
+                let short_lbl = preset.short_label();
+                if segmented_pill(
+                    ui,
+                    &short_lbl,
+                    is_sel,
+                    Color32::from_rgb(155, 72, 12),
+                    pal.neutral_orange,
+                )
+                .clicked()
+                {
+                    self.selected_oc_preset = preset;
+                    self.boot_oc.apply_preset(preset);
+                    self.runtime_max_mhz =
+                        self.boot_oc.arm_freq_mhz.min(self.telemetry.cpu_hw_max_mhz);
+                    self.runtime_governor = if preset == OcPreset::EcoPowerSave {
+                        "powersave".to_string()
+                    } else if preset == OcPreset::OcExtreme {
+                        "performance".to_string()
+                    } else {
+                        "schedutil".to_string()
+                    };
+                    let res = apply_runtime_cpufreq(
+                        &self.runtime_governor,
+                        self.runtime_min_mhz,
+                        self.runtime_max_mhz,
+                        self.runtime_boost,
+                    );
+                    self.log_result("1-Click CPUFreq", res);
+                }
+            }
+        });
+        ui.add_space(4.0);
+        let govs = self.telemetry.available_governors.clone();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Gov:").size(11.5).color(pal.text_inactive));
+            egui::ComboBox::from_id_salt("compact_gov_combo")
+                .width(120.0)
+                .selected_text(&self.telemetry.cpu_governor)
+                .show_ui(ui, |ui| {
+                    for g in &govs {
+                        if ui
+                            .selectable_label(&self.telemetry.cpu_governor == g, g)
+                            .clicked()
+                        {
+                            self.runtime_governor = g.clone();
+                            let res = apply_runtime_cpufreq(
+                                g,
+                                self.telemetry.cpu_min_freq_mhz,
+                                self.telemetry.cpu_max_freq_mhz,
+                                self.telemetry.cpu_boost_enabled,
+                            );
+                            self.log_result(&format!("Governor -> {g}"), res);
+                        }
+                    }
+                });
+        });
+    }
+    fn compact_service_controls(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
+        // Column 3: Argononed Guardian & Quick Lab Access
+        ui.label(
+            RichText::new("🛡 argononed Guardian & Lab")
+                .size(12.5)
+                .strong()
+                .color(pal.positive_green),
+        );
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            if aorus_action_button(
+                ui,
+                t.btn_start,
+                Color32::from_rgb(18, 115, 72),
+                pal.positive_green,
+            )
+            .on_hover_text(t.btn_start_tip)
+            .clicked()
+            {
+                let res = control_argononed_service("start");
+                self.log_result("Start argononed", res);
+                self.telemetry.last_slow_refresh = None;
+            }
+            if aorus_action_button(
+                ui,
+                t.btn_restart,
+                Color32::from_rgb(24, 98, 145),
+                pal.focus_blue,
+            )
+            .on_hover_text(t.btn_restart_tip)
+            .clicked()
+            {
+                let res = control_argononed_service("restart");
+                self.log_result("Restart argononed", res);
+                self.telemetry.last_slow_refresh = None;
+            }
+            if ui
+                .button(t.btn_stop)
+                .on_hover_text(t.btn_stop_tip)
+                .clicked()
+            {
+                let res = control_argononed_service("stop");
+                self.log_result("Stop argononed", res);
+                self.telemetry.last_slow_refresh = None;
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui.small_button("🔬 GPIO & Serial Lab").clicked() {
+                self.active_tab = ActiveTab::GpioLab;
+            }
+            if ui.small_button("🛠 I2C/OLED/IR").clicked() {
+                self.active_tab = ActiveTab::Features;
+            }
+        });
+    }
+
+    fn draw_kde_compact_overview_tab(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
 
         // 1. Compact Donut Ring Strip (CPU | Temp | Cooler | RAM)
         aorus_card_with_tip(
@@ -1109,48 +1087,48 @@ impl ArgonControlCenterApp {
                     self.telemetry.net_rx_kbps, self.telemetry.net_tx_kbps
                 );
 
-                ui.columns(4, |cols| {
-                    draw_kde_donut_chart_sized(
-                        &mut cols[0],
+                let rings: [(&str, &str, &str, f32, Color32); 4] = [
+                    (
                         t.gauge_cpu_clock,
                         &cpu_val,
                         &cpu_sub,
                         cpu_frac,
                         pal.focus_blue,
-                        &pal,
-                        true,
-                    );
-                    draw_kde_donut_chart_sized(
-                        &mut cols[1],
-                        t.gauge_cpu_temp,
-                        &temp_val,
-                        &temp_sub,
-                        temp_frac,
-                        temp_col,
-                        &pal,
-                        true,
-                    );
-                    draw_kde_donut_chart_sized(
-                        &mut cols[2],
+                    ),
+                    (t.gauge_cpu_temp, &temp_val, &temp_sub, temp_frac, temp_col),
+                    (
                         t.gauge_fan_speed,
                         &fan_val,
                         fan_sub,
                         fan_frac,
                         Color32::from_rgb(26, 188, 156),
-                        &pal,
-                        true,
-                    );
-                    draw_kde_donut_chart_sized(
-                        &mut cols[3],
+                    ),
+                    (
                         t.gauge_memory,
                         &ram_val,
                         &ram_sub,
                         ram_frac,
                         pal.visited_purple,
-                        &pal,
-                        true,
-                    );
-                });
+                    ),
+                ];
+                // 4 rings per row on wide windows, 2 on medium, 1 on very narrow ones.
+                let w = ui.available_width();
+                let per_row = if w >= 600.0 {
+                    4
+                } else if w >= 300.0 {
+                    2
+                } else {
+                    1
+                };
+                for chunk in rings.chunks(per_row) {
+                    ui.columns(per_row, |cols| {
+                        for (col, (title, val, sub, frac, color)) in cols.iter_mut().zip(chunk) {
+                            draw_kde_donut_chart_sized(
+                                col, title, val, sub, *frac, *color, &pal, true,
+                            );
+                        }
+                    });
+                }
             },
         );
 
@@ -1163,214 +1141,27 @@ impl ArgonControlCenterApp {
             t.kde_compact_controls_tip,
             pal.positive_green,
             |ui| {
-                ui.columns(3, |cols| {
-                    // Column 1: Smart Fan Direct Controls
-                    cols[0].label(
-                        RichText::new("🌀 Smart Fan & I2C PWM")
-                            .size(12.5)
-                            .strong()
-                            .color(pal.focus_blue),
-                    );
-                    cols[0].add_space(4.0);
-                    cols[0].horizontal_wrapped(|ui| {
-                        for (lbl, spd) in [
-                            (t.quick_auto, None),
-                            ("0%", Some(0u8)),
-                            ("35%", Some(35)),
-                            ("65%", Some(65)),
-                            ("100%", Some(100)),
-                        ] {
-                            let is_sel = self.telemetry.manual_fan_override == spd;
-                            if segmented_pill(
-                                ui,
-                                lbl,
-                                is_sel,
-                                Color32::from_rgb(24, 98, 145),
-                                pal.focus_blue,
-                            )
-                            .clicked()
-                            {
-                                self.telemetry.manual_fan_override = spd;
-                                match spd {
-                                    Some(pct) => {
-                                        self.manual_fan_slider = pct;
-                                        let res = set_immediate_fan_speed(pct);
-                                        self.log_result(&format!("Fan PWM {pct}%"), res);
-                                    }
-                                    None => {
-                                        let res = control_argononed_service("restart");
-                                        self.log_result("Fan Auto Curve", res);
-                                    }
-                                }
-                            }
-                        }
+                let w = ui.available_width();
+                if w >= 900.0 {
+                    ui.columns(3, |cols| {
+                        self.compact_fan_controls(&mut cols[0]);
+                        self.compact_oc_controls(&mut cols[1]);
+                        self.compact_service_controls(&mut cols[2]);
                     });
-                    cols[0].add_space(4.0);
-                    cols[0].horizontal_wrapped(|ui| {
-                        egui::ComboBox::from_id_salt("compact_fan_preset")
-                            .width(145.0)
-                            .selected_text(self.selected_fan_preset.label(lang))
-                            .show_ui(ui, |ui| {
-                                for p in [
-                                    FanPreset::Silent,
-                                    FanPreset::BalancedDefault,
-                                    FanPreset::Performance,
-                                    FanPreset::AlwaysOnTurbo,
-                                ] {
-                                    if ui
-                                        .selectable_label(
-                                            self.selected_fan_preset == p,
-                                            p.label(lang),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.selected_fan_preset = p;
-                                        self.cpu_fan_curve = p.points();
-                                    }
-                                }
-                            });
-                        if aorus_action_button(
-                            ui,
-                            "💾",
-                            Color32::from_rgb(18, 115, 72),
-                            pal.positive_green,
-                        )
-                        .on_hover_text(t.btn_save_fan_curve_tip)
-                        .clicked()
-                        {
-                            let res = save_fan_curve(CPU_FAN_CONF, &self.cpu_fan_curve, "CPU");
-                            self.log_result("Save CPU Fan Curve", res);
-                        }
+                } else if w >= 560.0 {
+                    ui.columns(2, |cols| {
+                        self.compact_fan_controls(&mut cols[0]);
+                        self.compact_oc_controls(&mut cols[1]);
                     });
-
-                    // Column 2: Overclocking & Live CPUFreq Controls
-                    cols[1].label(
-                        RichText::new("🔥 Overclock & CPUFreq")
-                            .size(12.5)
-                            .strong()
-                            .color(pal.neutral_orange),
-                    );
-                    cols[1].add_space(4.0);
-                    cols[1].horizontal_wrapped(|ui| {
-                        for preset in [
-                            OcPreset::EcoPowerSave,
-                            OcPreset::StockBoost,
-                            OcPreset::OcGaming,
-                            OcPreset::OcExtreme,
-                        ] {
-                            let is_sel = self.selected_oc_preset == preset;
-                            let short_lbl = preset.short_label();
-                            if segmented_pill(
-                                ui,
-                                &short_lbl,
-                                is_sel,
-                                Color32::from_rgb(155, 72, 12),
-                                pal.neutral_orange,
-                            )
-                            .clicked()
-                            {
-                                self.selected_oc_preset = preset;
-                                self.boot_oc.apply_preset(preset);
-                                self.runtime_max_mhz =
-                                    self.boot_oc.arm_freq_mhz.min(self.telemetry.cpu_hw_max_mhz);
-                                self.runtime_governor = if preset == OcPreset::EcoPowerSave {
-                                    "powersave".to_string()
-                                } else if preset == OcPreset::OcExtreme {
-                                    "performance".to_string()
-                                } else {
-                                    "schedutil".to_string()
-                                };
-                                let res = apply_runtime_cpufreq(
-                                    &self.runtime_governor,
-                                    self.runtime_min_mhz,
-                                    self.runtime_max_mhz,
-                                    self.runtime_boost,
-                                );
-                                self.log_result("1-Click CPUFreq", res);
-                            }
-                        }
-                    });
-                    cols[1].add_space(4.0);
-                    let govs = self.telemetry.available_governors.clone();
-                    cols[1].horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Gov:").size(11.5).color(pal.text_inactive));
-                        egui::ComboBox::from_id_salt("compact_gov_combo")
-                            .width(120.0)
-                            .selected_text(&self.telemetry.cpu_governor)
-                            .show_ui(ui, |ui| {
-                                for g in &govs {
-                                    if ui
-                                        .selectable_label(&self.telemetry.cpu_governor == g, g)
-                                        .clicked()
-                                    {
-                                        self.runtime_governor = g.clone();
-                                        let res = apply_runtime_cpufreq(
-                                            g,
-                                            self.telemetry.cpu_min_freq_mhz,
-                                            self.telemetry.cpu_max_freq_mhz,
-                                            self.telemetry.cpu_boost_enabled,
-                                        );
-                                        self.log_result(&format!("Governor -> {g}"), res);
-                                    }
-                                }
-                            });
-                    });
-
-                    // Column 3: Argononed Guardian & Quick Lab Access
-                    cols[2].label(
-                        RichText::new("🛡 argononed Guardian & Lab")
-                            .size(12.5)
-                            .strong()
-                            .color(pal.positive_green),
-                    );
-                    cols[2].add_space(4.0);
-                    cols[2].horizontal_wrapped(|ui| {
-                        if aorus_action_button(
-                            ui,
-                            t.btn_start,
-                            Color32::from_rgb(18, 115, 72),
-                            pal.positive_green,
-                        )
-                        .on_hover_text(t.btn_start_tip)
-                        .clicked()
-                        {
-                            let res = control_argononed_service("start");
-                            self.log_result("Start argononed", res);
-                            self.telemetry.last_slow_refresh = None;
-                        }
-                        if aorus_action_button(
-                            ui,
-                            t.btn_restart,
-                            Color32::from_rgb(24, 98, 145),
-                            pal.focus_blue,
-                        )
-                        .on_hover_text(t.btn_restart_tip)
-                        .clicked()
-                        {
-                            let res = control_argononed_service("restart");
-                            self.log_result("Restart argononed", res);
-                            self.telemetry.last_slow_refresh = None;
-                        }
-                        if ui
-                            .button(t.btn_stop)
-                            .on_hover_text(t.btn_stop_tip)
-                            .clicked()
-                        {
-                            let res = control_argononed_service("stop");
-                            self.log_result("Stop argononed", res);
-                            self.telemetry.last_slow_refresh = None;
-                        }
-                    });
-                    cols[2].add_space(4.0);
-                    cols[2].horizontal_wrapped(|ui| {
-                        if ui.small_button("🔬 GPIO & Serial Lab").clicked() {
-                            self.active_tab = ActiveTab::GpioLab;
-                        }
-                        if ui.small_button("🛠 I2C/OLED/IR").clicked() {
-                            self.active_tab = ActiveTab::Features;
-                        }
-                    });
-                });
+                    ui.separator();
+                    self.compact_service_controls(ui);
+                } else {
+                    self.compact_fan_controls(ui);
+                    ui.separator();
+                    self.compact_oc_controls(ui);
+                    ui.separator();
+                    self.compact_service_controls(ui);
+                }
             },
         );
 
@@ -1458,7 +1249,7 @@ impl ArgonControlCenterApp {
     // =========================================================================
     fn draw_kde_dashboard_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        let pal = self.kde_palette;
+        let pal = self.active_palette();
 
         // 1. Unified KDE overview.page Donut Ring Strip (4 piechart sensors with subtle dividers)
         aorus_card_with_tip(
@@ -2208,6 +1999,201 @@ impl ArgonControlCenterApp {
     // =========================================================================
     // TAB 2: SMART FAN 5 (CLEAN GROUPED UX + RICH TOOLTIPS)
     // =========================================================================
+    // =========================================================================
+    // SETTINGS: appearance, language, units, about
+    // =========================================================================
+    fn draw_settings_tab(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        let t = texts(self.lang);
+        let mut restyle = false;
+
+        aorus_card_with_tip(
+            ui,
+            t.set_appearance,
+            t.set_appearance_tip,
+            uc().cyan,
+            |ui| {
+                settings_label(ui, t.set_layout);
+                choice_row(
+                    ui,
+                    &mut self.layout,
+                    &[
+                        (
+                            Layout::Sidebar,
+                            t.set_layout_sidebar,
+                            t.set_layout_sidebar_desc,
+                        ),
+                        (Layout::TopTabs, t.set_layout_tabs, t.set_layout_tabs_desc),
+                    ],
+                );
+                ui.add_space(8.0);
+                settings_label(ui, t.set_colors);
+                if choice_row(
+                    ui,
+                    &mut self.colors,
+                    &[
+                        (
+                            ColorScheme::System,
+                            t.set_colors_system,
+                            t.set_colors_system_desc,
+                        ),
+                        (
+                            ColorScheme::Aorus,
+                            t.set_colors_aorus,
+                            t.set_colors_aorus_desc,
+                        ),
+                    ],
+                ) {
+                    restyle = true;
+                }
+                ui.add_space(8.0);
+                settings_label(ui, t.set_dashboard);
+                choice_row(
+                    ui,
+                    &mut self.dashboard,
+                    &[
+                        (
+                            DashboardStyle::Compact,
+                            t.set_dash_compact,
+                            t.set_dash_compact_desc,
+                        ),
+                        (
+                            DashboardStyle::Charts,
+                            t.set_dash_charts,
+                            t.set_dash_charts_desc,
+                        ),
+                        (
+                            DashboardStyle::Gauges,
+                            t.set_dash_gauges,
+                            t.set_dash_gauges_desc,
+                        ),
+                    ],
+                );
+                ui.add_space(8.0);
+                settings_label(ui, t.set_scale);
+                ui.horizontal_wrapped(|ui| {
+                    for pct in [80_u32, 90, 100, 115, 130, 150] {
+                        let v = pct as f32 / 100.0;
+                        let selected = (self.ui_scale - v).abs() < 0.01;
+                        if segmented_pill(
+                            ui,
+                            &format!("{pct}%"),
+                            selected,
+                            uc().btn_cyan,
+                            uc().cyan,
+                        )
+                        .on_hover_text(t.set_scale_tip)
+                        .clicked()
+                        {
+                            self.ui_scale = crate::settings::clamp_scale(v);
+                            ctx.set_zoom_factor(self.ui_scale);
+                        }
+                    }
+                });
+            },
+        );
+
+        ui.add_space(12.0);
+        aorus_card_with_tip(ui, t.set_language, t.set_language_tip, uc().green, |ui| {
+            choice_row(
+                ui,
+                &mut self.lang,
+                &[
+                    (Language::EnUs, "English", "English (United States)"),
+                    (Language::PtBr, "Português", "Português (Brasil)"),
+                ],
+            );
+        });
+
+        ui.add_space(12.0);
+        let mut apply_argon_unit = false;
+        aorus_card_with_tip(ui, t.set_units, t.set_units_tip, uc().orange, |ui| {
+            settings_label(ui, t.set_temp_display);
+            choice_row(
+                ui,
+                &mut self.temp_unit,
+                &[
+                    (TempUnit::Celsius, "°C", "Celsius"),
+                    (TempUnit::Fahrenheit, "°F", "Fahrenheit"),
+                ],
+            );
+            ui.add_space(8.0);
+            settings_label(ui, t.set_argon_unit);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} {}",
+                        t.set_argon_unit_current,
+                        self.argon_unit.symbol()
+                    ))
+                    .size(12.5)
+                    .color(uc().text_secondary),
+                );
+                let differs = self.argon_unit != self.temp_unit;
+                let btn = ui.add_enabled(
+                    differs,
+                    egui::Button::new(
+                        RichText::new(format!(
+                            "{} ({})",
+                            t.set_apply_argon_unit,
+                            self.temp_unit.symbol()
+                        ))
+                        .strong(),
+                    ),
+                );
+                if btn.on_hover_text(t.set_apply_argon_unit_tip).clicked() {
+                    apply_argon_unit = true;
+                }
+            });
+        });
+        if apply_argon_unit {
+            let res = save_temp_unit(self.temp_unit);
+            if res.is_ok() {
+                self.argon_unit = self.temp_unit;
+            }
+            self.log_result("Argon temperature unit", res);
+        }
+
+        ui.add_space(12.0);
+        aorus_card_with_tip(ui, t.set_about, t.set_about_tip, uc().amber, |ui| {
+            let board = crate::board::current();
+            egui::Grid::new("settings_about_grid")
+                .num_columns(2)
+                .spacing([14.0, 6.0])
+                .show(ui, |ui| {
+                    spec_row(ui, t.set_version, env!("CARGO_PKG_VERSION"));
+                    spec_row(ui, t.set_hardware, &board.summary());
+                    spec_row(ui, t.set_color_source, &self.kde_palette.describe());
+                    let path = crate::settings::path()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "—".into());
+                    spec_row(ui, t.set_settings_file, &path);
+                });
+            ui.add_space(8.0);
+            if ui
+                .button(RichText::new(t.set_reset).strong())
+                .on_hover_text(t.set_reset_tip)
+                .clicked()
+            {
+                let d = crate::settings::Settings::default();
+                self.layout = d.layout;
+                self.colors = d.colors;
+                self.dashboard = d.dashboard;
+                self.lang = d.language;
+                self.temp_unit = self.argon_unit;
+                self.ui_scale = d.ui_scale;
+                ctx.set_zoom_factor(self.ui_scale);
+                restyle = true;
+            }
+        });
+
+        if restyle {
+            if self.colors == ColorScheme::System {
+                self.kde_palette = KdeBreezePalette::load_from_system();
+            }
+            self.apply_style(ctx);
+        }
+    }
+
     fn draw_smart_fan_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
         responsive_two_columns(
@@ -2467,6 +2453,9 @@ impl ArgonControlCenterApp {
                         .inner_margin(egui::Margin::same(8))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
+                            // Slider shrinks with the window so the 4-column grid never clips.
+                            ui.spacing_mut().slider_width =
+                                (ui.available_width() - 290.0).clamp(60.0, 220.0);
                             egui::Grid::new("fan_stages_grid")
                                 .num_columns(4)
                                 .spacing([10.0, 6.0])
@@ -3644,18 +3633,27 @@ impl ArgonControlCenterApp {
                             .id_salt("rpi_40pin_scroll")
                             .max_height(315.0)
                             .show(ui, |ui| {
+                                // Two columns mirror the physical header; narrow windows
+                                // list the pins 1..40 in a single column instead.
+                                let two_cols = ui.available_width() >= 2.0 * 210.0 + 30.0;
                                 egui::Grid::new("rpi_40pin_grid")
-                                    .num_columns(2)
+                                    .num_columns(if two_cols { 2 } else { 1 })
                                     .spacing([10.0, 4.0])
                                     .striped(true)
                                     .show(ui, |ui| {
-                                        for row in 0..20 {
-                                            let odd_pin = &RPI_40PIN_HEADER[row * 2];
-                                            let even_pin = &RPI_40PIN_HEADER[row * 2 + 1];
-
-                                            self.draw_single_header_pin(ui, odd_pin, false);
-                                            self.draw_single_header_pin(ui, even_pin, true);
-                                            ui.end_row();
+                                        if two_cols {
+                                            for row in 0..20 {
+                                                let odd_pin = &RPI_40PIN_HEADER[row * 2];
+                                                let even_pin = &RPI_40PIN_HEADER[row * 2 + 1];
+                                                self.draw_single_header_pin(ui, odd_pin, false);
+                                                self.draw_single_header_pin(ui, even_pin, true);
+                                                ui.end_row();
+                                            }
+                                        } else {
+                                            for pin in RPI_40PIN_HEADER.iter() {
+                                                self.draw_single_header_pin(ui, pin, false);
+                                                ui.end_row();
+                                            }
                                         }
                                     });
                             });
@@ -4955,4 +4953,111 @@ fn chart_grid() -> Color32 {
 /// Subtle accent-tinted surface for banners (works on dark and light palettes).
 fn tint(accent: Color32) -> Color32 {
     crate::system_colors::mix(uc().bg_card, accent, 0.14)
+}
+
+/// Navigation entries in display order: (tab, label, tooltip).
+fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 7] {
+    let t = texts(lang);
+    [
+        (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
+        (ActiveTab::SmartFan, t.tab_smart_fan, t.tab_smart_fan_tip),
+        (
+            ActiveTab::Overclocking,
+            t.tab_overclock,
+            t.tab_overclock_tip,
+        ),
+        (ActiveTab::Features, t.tab_features, t.tab_features_tip),
+        (ActiveTab::GpioLab, t.tab_gpio_lab, t.tab_gpio_lab_tip),
+        (
+            ActiveTab::ServicesAndConfig,
+            t.tab_services,
+            t.tab_services_tip,
+        ),
+        (ActiveTab::Settings, t.tab_settings, t.tab_settings_tip),
+    ]
+}
+
+fn settings_label(ui: &mut Ui, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .size(13.0)
+            .strong()
+            .color(uc().text_primary),
+    );
+    ui.add_space(2.0);
+}
+
+/// Selectable option cards (title + one-line description) that wrap on narrow windows.
+/// Returns true when the selection changed.
+fn choice_row<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    value: &mut T,
+    options: &[(T, &str, &str)],
+) -> bool {
+    let mut changed = false;
+    let avail = ui.available_width();
+    // Up to three cards per row, never narrower than 200 px (one per row on small windows).
+    let per_row = ((avail / 220.0).floor() as usize).clamp(1, options.len().max(1));
+    let gap = 8.0;
+    let card_w = ((avail - gap * (per_row as f32 - 1.0)) / per_row as f32).max(120.0);
+    for chunk in options.chunks(per_row) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (opt, title, desc) in chunk {
+                let selected = *value == *opt;
+                let fill = if selected {
+                    crate::system_colors::mix(uc().bg_card, uc().cyan, 0.18)
+                } else {
+                    uc().bg_subgroup
+                };
+                let stroke = if selected {
+                    Stroke::new(1.5_f32, uc().cyan)
+                } else {
+                    Stroke::new(1.0_f32, uc().border_subtle)
+                };
+                let resp = egui::Frame::new()
+                    .fill(fill)
+                    .stroke(stroke)
+                    .corner_radius(CornerRadius::same(5))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(card_w - 22.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(if selected { "●" } else { "○" })
+                                    .size(13.0)
+                                    .color(if selected {
+                                        uc().cyan
+                                    } else {
+                                        uc().text_secondary
+                                    }),
+                            );
+                            ui.label(
+                                RichText::new(*title)
+                                    .size(13.0)
+                                    .strong()
+                                    .color(uc().text_primary),
+                            );
+                        });
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(*desc).size(11.5).color(uc().text_secondary),
+                            )
+                            .wrap(),
+                        );
+                    })
+                    .response
+                    .interact(Sense::click());
+                if resp.clicked() && !selected {
+                    *value = *opt;
+                    changed = true;
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+            }
+        });
+        ui.add_space(gap);
+    }
+    changed
 }
