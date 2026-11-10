@@ -1,0 +1,14 @@
+[tools]
+rust = "stable"
+
+[tasks.build]
+description = "Compile Argon Control Center in release mode"
+run = "cargo build --release"
+
+[tasks.run]
+description = "Run Argon Control Center GUI"
+run = "cargo run --release"
+
+[tasks.check]
+description = "Run cargo check and tests"
+run = "cargo test"
