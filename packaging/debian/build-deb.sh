@@ -19,6 +19,17 @@ chmod 755 "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
 sh packaging/common/install-tree.sh "$STAGE" "$BIN"
 strip "$STAGE/usr/bin/argon-control-center" 2>/dev/null || true
+# Debian machine-readable copyright file
+{
+    echo "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
+    echo "Upstream-Name: argon-config-rs"
+    echo "Source: https://github.com/wendelmax/argon-config-rs"
+    echo
+    echo "Files: *"
+    echo "Copyright: 2026 wendelmax"
+    echo "License: MIT"
+    sed 's/^$/./; s/^/ /' LICENSE | tail -n +4
+} > "$STAGE/usr/share/doc/argon-control-center/copyright"
 
 install -d "$STAGE/DEBIAN"
 SIZE_KB="$(du -sk "$STAGE" | cut -f1)"

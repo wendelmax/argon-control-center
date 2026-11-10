@@ -213,3 +213,9 @@ CI (`.github/workflows/ci.yml`) runs fmt, clippy, tests and a release build on x
 ## ⚠️ Warnings
 - Overclocking and over-voltage can cause instability; keep active cooling. If the Pi stops booting after a change, edit `config.txt` on the SD card from another computer: restore `config.txt.argoncc.bak` or delete the `ARGON AORUS CONTROL CENTER` block.
 - Stopping `argononed` disables the automatic fan curve and the case power button.
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 wendelmax
