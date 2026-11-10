@@ -1,21 +1,29 @@
+use crate::system_colors::{
+    self, contrast_ratio, luminance, mix, on_color, DesktopKind, PaletteSource, SystemColors,
+};
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Pos2, Sense, Shape, Stroke, StrokeKind,
     TextStyle, Ui, Vec2,
 };
 use std::collections::VecDeque;
 use std::f32::consts::PI;
-use std::fs;
 
 /// Available UI Theme & Layout Models.
+/// - `KdeCompactOverview`: All-in-One No-Scroll Compact Overview (`overview.page` sensors + Area charts + Direct Fan/OC/Daemon controls on a single screen).
+/// - `KdeBreeze`: Full KDE Plasma System Monitor (`plasma-systemmonitor`) Kirigami sidebar + Donut rings + stacked `history.page` area charts.
+/// - `BreezeClassicLayout`: KDE Breeze Dark color palette (`~/.config/kdeglobals`) & subtle borders applied over the classic v1 layout & radial gauges.
 /// - `AorusGaming`: Saved v1.0 Gigabyte AORUS Gaming theme (top double bar, automotive radial gauges, neon orange/cyan accents).
-/// - `KdeBreeze`: KDE Plasma System Monitor (`plasma-systemmonitor`) theme & layout (Kirigami left sidebar, contextual header bar, unified donut ring strip, translucent area line charts, and live `~/.config/kdeglobals` Breeze Dark palette).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeModel {
+    KdeCompactOverview,
     KdeBreeze,
+    BreezeClassicLayout,
     AorusGaming,
 }
 
-/// Color palette loaded from `/home/user/.config/kdeglobals` (or `/usr/share/color-schemes/BreezeDark.colors` fallback).
+/// Desktop palette (historically KDE-only, now resolved from any desktop via [`crate::system_colors`]):
+/// KDE `kdeglobals`, GTK theme `@define-color`s (GNOME/Cinnamon/MATE/XFCE…), the XDG portal
+/// accent / dark-light preference, then Breeze Dark defaults.
 #[derive(Debug, Clone, Copy)]
 pub struct KdeBreezePalette {
     pub window_bg: Color32,
@@ -33,94 +41,224 @@ pub struct KdeBreezePalette {
     pub negative_red: Color32,
     pub visited_purple: Color32,
     pub border_subtle: Color32,
+    // Derived surfaces (computed in `finalize`)
+    pub is_dark: bool,
+    pub hover_bg: Color32,
+    pub selected_fill: Color32,
+    pub on_selected: Color32,
+    pub track: Color32,
+    pub grid: Color32,
+    pub source: PaletteSource,
+    pub desktop: DesktopKind,
 }
 
 impl Default for KdeBreezePalette {
     fn default() -> Self {
-        Self {
-            window_bg: Color32::from_rgb(32, 35, 38),       // #202326
-            window_alt_bg: Color32::from_rgb(41, 44, 48),   // #292C30
-            view_bg: Color32::from_rgb(20, 22, 24),         // #141618
-            view_alt_bg: Color32::from_rgb(29, 31, 34),     // #1D1F22
-            header_bg: Color32::from_rgb(41, 44, 48),       // #292C30
-            button_bg: Color32::from_rgb(41, 44, 48),       // #292C30
-            selection_bg: Color32::from_rgb(61, 174, 233),  // #3DAEE9
-            focus_blue: Color32::from_rgb(61, 174, 233),    // #3DAEE9
-            text_normal: Color32::from_rgb(252, 252, 252),  // #FCFCFC
-            text_inactive: Color32::from_rgb(161, 169, 177),// #A1A9B1
-            positive_green: Color32::from_rgb(39, 174, 96), // #27AE60
-            neutral_orange: Color32::from_rgb(246, 116, 0), // #F67400
-            negative_red: Color32::from_rgb(218, 68, 83),   // #DA4453
-            visited_purple: Color32::from_rgb(155, 89, 182),// #9B59B6
-            border_subtle: Color32::from_rgb(58, 63, 68),   // Subtle 1px frameContrast=0.2
-        }
+        let mut p = Self {
+            window_bg: Color32::from_rgb(32, 35, 38),        // #202326
+            window_alt_bg: Color32::from_rgb(41, 44, 48),    // #292C30
+            view_bg: Color32::from_rgb(20, 22, 24),          // #141618
+            view_alt_bg: Color32::from_rgb(29, 31, 34),      // #1D1F22
+            header_bg: Color32::from_rgb(41, 44, 48),        // #292C30
+            button_bg: Color32::from_rgb(41, 44, 48),        // #292C30
+            selection_bg: Color32::from_rgb(61, 174, 233),   // #3DAEE9
+            focus_blue: Color32::from_rgb(61, 174, 233),     // #3DAEE9
+            text_normal: Color32::from_rgb(252, 252, 252),   // #FCFCFC
+            text_inactive: Color32::from_rgb(161, 169, 177), // #A1A9B1
+            positive_green: Color32::from_rgb(39, 174, 96),  // #27AE60
+            neutral_orange: Color32::from_rgb(246, 116, 0),  // #F67400
+            negative_red: Color32::from_rgb(218, 68, 83),    // #DA4453
+            visited_purple: Color32::from_rgb(155, 89, 182), // #9B59B6
+            border_subtle: Color32::from_rgb(58, 63, 68),    // Subtle 1px frameContrast=0.2
+            is_dark: true,
+            hover_bg: Color32::TRANSPARENT,
+            selected_fill: Color32::TRANSPARENT,
+            on_selected: Color32::WHITE,
+            track: Color32::TRANSPARENT,
+            grid: Color32::TRANSPARENT,
+            source: PaletteSource::Fallback,
+            desktop: DesktopKind::Other,
+        };
+        p.finalize();
+        p
     }
 }
 
 impl KdeBreezePalette {
-    /// Reads live KDE color scheme from `~/.config/kdeglobals` or `/usr/share/color-schemes/BreezeDark.colors`.
+    /// Reads the live desktop palette (KDE, GNOME, Cinnamon, MATE, XFCE, LXQt or any WM with
+    /// xdg-desktop-portal). Light schemes are supported; missing values fall back to Breeze.
     pub fn load_from_system() -> Self {
-        let mut pal = Self::default();
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
-        let kdeglobals_path = format!("{home}/.config/kdeglobals");
-        let content = fs::read_to_string(&kdeglobals_path)
-            .or_else(|_| fs::read_to_string("/usr/share/color-schemes/BreezeDark.colors"))
-            .unwrap_or_default();
+        let (colors, source, desktop) = system_colors::detect();
+        Self::from_system_colors(&colors, source, desktop)
+    }
 
-        if !content.is_empty() {
-            pal.apply_ini_str(&content);
+    pub fn from_system_colors(
+        c: &SystemColors,
+        source: PaletteSource,
+        desktop: DesktopKind,
+    ) -> Self {
+        let surface_dark = c.window_bg.or(c.view_bg).map(|bg| luminance(bg) < 0.5);
+        let wants_light = surface_dark
+            .map(|d| !d)
+            .unwrap_or(c.prefer_dark == Some(false));
+        let mut pal = if wants_light {
+            Self::breeze_light()
+        } else {
+            Self::default()
+        };
+        macro_rules! set {
+            ($($dst:ident <- $src:ident),*) => { $( if let Some(v) = c.$src { pal.$dst = v; } )* };
         }
+        set!(
+            window_bg <- window_bg, view_bg <- view_bg, header_bg <- header_bg,
+            button_bg <- button_bg, selection_bg <- selection_bg, focus_blue <- accent,
+            text_normal <- text_normal, text_inactive <- text_inactive,
+            positive_green <- positive, neutral_orange <- neutral, negative_red <- negative,
+            visited_purple <- visited, border_subtle <- border
+        );
+        // Derive missing surfaces from the ones the source did provide.
+        let dark = luminance(pal.window_bg) < 0.5;
+        let towards = if dark { Color32::WHITE } else { Color32::BLACK };
+        match (c.window_bg, c.view_bg) {
+            (Some(w), None) => {
+                pal.view_bg = if dark {
+                    mix(w, Color32::BLACK, 0.25)
+                } else {
+                    mix(w, Color32::WHITE, 0.7)
+                }
+            }
+            (None, Some(v)) => {
+                pal.window_bg = if dark {
+                    mix(v, Color32::WHITE, 0.06)
+                } else {
+                    mix(v, Color32::BLACK, 0.05)
+                }
+            }
+            _ => {}
+        }
+        if c.text_normal.is_none() {
+            pal.text_normal = if dark {
+                Color32::from_rgb(252, 252, 252)
+            } else {
+                Color32::from_rgb(35, 38, 41)
+            };
+        }
+        pal.window_alt_bg = c
+            .window_alt_bg
+            .unwrap_or_else(|| mix(pal.window_bg, towards, 0.05));
+        pal.view_alt_bg = c
+            .view_alt_bg
+            .unwrap_or_else(|| mix(pal.view_bg, towards, 0.04));
+        if c.header_bg.is_none() {
+            pal.header_bg = pal.window_alt_bg;
+        }
+        if c.button_bg.is_none() {
+            pal.button_bg = mix(pal.window_bg, towards, 0.08);
+        }
+        if c.border.is_none() {
+            pal.border_subtle = mix(pal.window_bg, pal.text_normal, 0.18);
+        }
+        if c.selection_bg.is_none() {
+            pal.selection_bg = pal.focus_blue;
+        }
+        if c.text_inactive.is_none() {
+            pal.text_inactive = mix(pal.text_normal, pal.window_bg, 0.4);
+        }
+        // Guarantee legible text whatever the theme shipped.
+        if contrast_ratio(pal.text_normal, pal.window_bg) < 4.5 {
+            pal.text_normal = on_color(pal.window_bg);
+        }
+        if contrast_ratio(pal.text_inactive, pal.window_bg) < 3.0 {
+            pal.text_inactive = mix(pal.text_normal, pal.window_bg, 0.3);
+        }
+        pal.source = source;
+        pal.desktop = desktop;
+        pal.finalize();
         pal
     }
 
-    pub fn apply_ini_str(&mut self, content: &str) {
-        let mut section = String::new();
-        for raw_line in content.lines() {
-            let line = raw_line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if line.starts_with('[') && line.ends_with(']') {
-                section = line[1..line.len() - 1].to_string();
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                if let Some(col) = parse_rgb_triplet(v.trim()) {
-                    match (section.as_str(), k.trim()) {
-                        ("Colors:Window", "BackgroundNormal") => self.window_bg = col,
-                        ("Colors:Window", "BackgroundAlternate") => self.window_alt_bg = col,
-                        ("Colors:View", "BackgroundNormal") => self.view_bg = col,
-                        ("Colors:View", "BackgroundAlternate") => self.view_alt_bg = col,
-                        ("Colors:Header", "BackgroundNormal") => self.header_bg = col,
-                        ("Colors:Button", "BackgroundNormal") => self.button_bg = col,
-                        ("Colors:Selection", "BackgroundNormal") => self.selection_bg = col,
-                        ("Colors:View", "DecorationFocus") => self.focus_blue = col,
-                        ("Colors:View", "ForegroundNormal") => self.text_normal = col,
-                        ("Colors:View", "ForegroundInactive") => self.text_inactive = col,
-                        ("Colors:View", "ForegroundPositive") => self.positive_green = col,
-                        ("Colors:View", "ForegroundNeutral") => self.neutral_orange = col,
-                        ("Colors:View", "ForegroundNegative") => self.negative_red = col,
-                        ("Colors:View", "ForegroundVisited") => self.visited_purple = col,
-                        _ => {}
-                    }
-                }
-            }
-        }
+    fn breeze_light() -> Self {
+        let mut p = Self {
+            window_bg: Color32::from_rgb(239, 240, 241), // #EFF0F1
+            window_alt_bg: Color32::from_rgb(227, 229, 231),
+            view_bg: Color32::from_rgb(255, 255, 255),
+            view_alt_bg: Color32::from_rgb(247, 247, 247),
+            header_bg: Color32::from_rgb(222, 224, 226),
+            button_bg: Color32::from_rgb(252, 252, 252),
+            text_normal: Color32::from_rgb(35, 38, 41), // #232629
+            text_inactive: Color32::from_rgb(112, 125, 138), // #707D8A
+            positive_green: Color32::from_rgb(39, 174, 96),
+            neutral_orange: Color32::from_rgb(246, 116, 0),
+            negative_red: Color32::from_rgb(218, 68, 83),
+            border_subtle: Color32::from_rgb(188, 192, 196),
+            ..Self::default()
+        };
+        p.finalize();
+        p
     }
-}
 
-fn parse_rgb_triplet(s: &str) -> Option<Color32> {
-    let mut parts = s.split(',');
-    let r: u8 = parts.next()?.trim().parse().ok()?;
-    let g: u8 = parts.next()?.trim().parse().ok()?;
-    let b: u8 = parts.next()?.trim().parse().ok()?;
-    Some(Color32::from_rgb(r, g, b))
+    /// Computes derived surfaces so every widget adapts to dark *and* light schemes.
+    fn finalize(&mut self) {
+        self.is_dark = luminance(self.window_bg) < 0.5;
+        let towards = if self.is_dark {
+            Color32::WHITE
+        } else {
+            Color32::BLACK
+        };
+        self.hover_bg = mix(
+            self.window_bg,
+            towards,
+            if self.is_dark { 0.10 } else { 0.07 },
+        );
+        self.selected_fill = mix(
+            self.window_bg,
+            self.focus_blue,
+            if self.is_dark { 0.45 } else { 0.85 },
+        );
+        self.on_selected = on_color(self.selected_fill);
+        self.track = mix(self.view_bg, self.text_normal, 0.14);
+        self.grid = mix(self.view_bg, self.text_normal, 0.08);
+    }
+
+    /// Kept for tests / callers that feed a raw kdeglobals string.
+    pub fn apply_ini_str(&mut self, content: &str) {
+        *self = Self::from_system_colors(
+            &system_colors::parse_kde_ini(content),
+            PaletteSource::KdeGlobals,
+            DesktopKind::Kde,
+        );
+    }
+
+    /// Short human description, e.g. "GNOME · GTK theme (gtk.css @define-color) · dark".
+    pub fn describe(&self) -> String {
+        format!(
+            "{} · {} · {}",
+            self.desktop.name(),
+            self.source.describe(),
+            if self.is_dark { "dark" } else { "light" }
+        )
+    }
+
+    /// Cheap equality on the colors that matter, used to skip needless restyles on live refresh.
+    pub fn same_colors(&self, o: &Self) -> bool {
+        self.window_bg == o.window_bg
+            && self.view_bg == o.view_bg
+            && self.focus_blue == o.focus_blue
+            && self.selection_bg == o.selection_bg
+            && self.text_normal == o.text_normal
+            && self.header_bg == o.header_bg
+            && self.button_bg == o.button_bg
+    }
 }
 
 /// Applies the KDE Breeze Dark visual style to `egui::Context`.
 pub fn configure_kde_breeze_style(ctx: &egui::Context, pal: &KdeBreezePalette) {
     let mut style = (*ctx.style()).clone();
-    let mut visuals = egui::Visuals::dark();
+    let mut visuals = if pal.is_dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
 
     visuals.panel_fill = pal.window_bg;
     visuals.window_fill = pal.window_bg;
@@ -130,8 +268,8 @@ pub fn configure_kde_breeze_style(ctx: &egui::Context, pal: &KdeBreezePalette) {
     visuals.override_text_color = Some(pal.text_normal);
 
     // Selected items (ComboBox, selectable_label) use KDE Selection Blue with bright white text
-    visuals.selection.bg_fill = Color32::from_rgb(28, 108, 156);
-    visuals.selection.stroke = Stroke::new(1.5_f32, Color32::WHITE);
+    visuals.selection.bg_fill = pal.selected_fill;
+    visuals.selection.stroke = Stroke::new(1.5_f32, pal.on_selected);
 
     // KDE Breeze subtle 4px rounded corners and thin 1px borders
     visuals.widgets.noninteractive.bg_fill = pal.view_alt_bg;
@@ -146,22 +284,22 @@ pub fn configure_kde_breeze_style(ctx: &egui::Context, pal: &KdeBreezePalette) {
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.2_f32, pal.text_normal);
     visuals.widgets.inactive.corner_radius = CornerRadius::same(4);
 
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(50, 56, 62);
-    visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(50, 56, 62);
+    visuals.widgets.hovered.bg_fill = pal.hover_bg;
+    visuals.widgets.hovered.weak_bg_fill = pal.hover_bg;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.2_f32, pal.focus_blue);
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, pal.text_normal);
     visuals.widgets.hovered.corner_radius = CornerRadius::same(4);
 
-    visuals.widgets.active.bg_fill = Color32::from_rgb(28, 108, 156);
-    visuals.widgets.active.weak_bg_fill = Color32::from_rgb(28, 108, 156);
+    visuals.widgets.active.bg_fill = pal.selected_fill;
+    visuals.widgets.active.weak_bg_fill = pal.selected_fill;
     visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, pal.focus_blue);
-    visuals.widgets.active.fg_stroke = Stroke::new(1.8_f32, Color32::WHITE);
+    visuals.widgets.active.fg_stroke = Stroke::new(1.8_f32, pal.on_selected);
     visuals.widgets.active.corner_radius = CornerRadius::same(4);
 
-    visuals.widgets.open.bg_fill = Color32::from_rgb(46, 52, 58);
-    visuals.widgets.open.weak_bg_fill = Color32::from_rgb(46, 52, 58);
+    visuals.widgets.open.bg_fill = pal.hover_bg;
+    visuals.widgets.open.weak_bg_fill = pal.hover_bg;
     visuals.widgets.open.bg_stroke = Stroke::new(1.2_f32, pal.focus_blue);
-    visuals.widgets.open.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
+    visuals.widgets.open.fg_stroke = Stroke::new(1.5_f32, pal.text_normal);
     visuals.widgets.open.corner_radius = CornerRadius::same(4);
 
     style.visuals = visuals;
@@ -203,20 +341,42 @@ pub fn draw_kde_donut_chart(
     ring_color: Color32,
     pal: &KdeBreezePalette,
 ) -> egui::Response {
-    let desired = Vec2::new(ui.available_width().max(130.0), 156.0);
+    draw_kde_donut_chart_sized(
+        ui,
+        title,
+        center_value,
+        subtitle,
+        fraction,
+        ring_color,
+        pal,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn draw_kde_donut_chart_sized(
+    ui: &mut Ui,
+    title: &str,
+    center_value: &str,
+    subtitle: &str,
+    fraction: f32,
+    ring_color: Color32,
+    pal: &KdeBreezePalette,
+    compact: bool,
+) -> egui::Response {
+    let height = if compact { 122.0 } else { 156.0 };
+    let desired = Vec2::new(ui.available_width().max(115.0), height);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::hover());
     let painter = ui.painter_at(rect);
 
-    let ring_center = Pos2::new(rect.center().x, rect.top() + 58.0);
-    let radius = 44.0_f32.min((rect.width() * 0.36).max(32.0));
-    let stroke_w = 8.5_f32;
+    let ring_center_y = if compact { 43.0 } else { 58.0 };
+    let ring_center = Pos2::new(rect.center().x, rect.top() + ring_center_y);
+    let max_r = if compact { 33.0_f32 } else { 44.0_f32 };
+    let radius = max_r.min((rect.width() * 0.34).max(26.0));
+    let stroke_w = if compact { 7.0_f32 } else { 8.5_f32 };
 
     // 1. Full 360° background ring track
-    painter.circle_stroke(
-        ring_center,
-        radius,
-        Stroke::new(stroke_w, Color32::from_rgb(42, 46, 52)),
-    );
+    painter.circle_stroke(ring_center, radius, Stroke::new(stroke_w, pal.track));
 
     // 2. Smooth progress arc starting from top (-PI/2) clockwise
     let clamped = fraction.clamp(0.0, 1.0);
@@ -228,7 +388,10 @@ pub fn draw_kde_donut_chart(
             .map(|i| {
                 let t = i as f32 / steps as f32;
                 let a = start_angle + t * (end_angle - start_angle);
-                Pos2::new(ring_center.x + radius * a.cos(), ring_center.y + radius * a.sin())
+                Pos2::new(
+                    ring_center.x + radius * a.cos(),
+                    ring_center.y + radius * a.sin(),
+                )
             })
             .collect();
         painter.add(Shape::line(pts, Stroke::new(stroke_w, ring_color)));
@@ -239,23 +402,25 @@ pub fn draw_kde_donut_chart(
         ring_center,
         Align2::CENTER_CENTER,
         center_value,
-        FontId::new(15.5, FontFamily::Proportional),
+        FontId::new(if compact { 13.5 } else { 15.5 }, FontFamily::Proportional),
         pal.text_normal,
     );
 
     // 4. Title & Subtitle below the ring (matching plasma-systemmonitor overview.page)
+    let title_off = if compact { 14.0 } else { 18.0 };
+    let sub_off = if compact { 28.0 } else { 35.0 };
     painter.text(
-        Pos2::new(rect.center().x, ring_center.y + radius + 18.0),
+        Pos2::new(rect.center().x, ring_center.y + radius + title_off),
         Align2::CENTER_CENTER,
         title,
-        FontId::new(13.0, FontFamily::Proportional),
+        FontId::new(if compact { 12.0 } else { 13.0 }, FontFamily::Proportional),
         pal.text_normal,
     );
     painter.text(
-        Pos2::new(rect.center().x, ring_center.y + radius + 35.0),
+        Pos2::new(rect.center().x, ring_center.y + radius + sub_off),
         Align2::CENTER_CENTER,
         subtitle,
-        FontId::new(11.5, FontFamily::Proportional),
+        FontId::new(11.0, FontFamily::Proportional),
         pal.text_inactive,
     );
 
@@ -290,14 +455,14 @@ pub fn draw_kde_area_line_chart(
         let y = plot.top() + plot.height() * (i as f32 / 4.0);
         painter.line_segment(
             [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 14)),
+            Stroke::new(1.0_f32, pal.grid),
         );
     }
     for i in 1..6 {
         let x = plot.left() + plot.width() * (i as f32 / 6.0);
         painter.line_segment(
             [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
-            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 10)),
+            Stroke::new(1.0_f32, pal.grid),
         );
     }
 

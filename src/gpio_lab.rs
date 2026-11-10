@@ -81,46 +81,206 @@ pub struct PhysicalPinDef {
 
 /// Standard 40-pin Raspberry Pi physical header definition (Pins 1..40).
 pub const RPI_40PIN_HEADER: [PhysicalPinDef; 40] = [
-    PhysicalPinDef { phys_num: 1, label: "3.3V PWR", kind: HeaderPinKind::Power3v3 },
-    PhysicalPinDef { phys_num: 2, label: "5V PWR", kind: HeaderPinKind::Power5v },
-    PhysicalPinDef { phys_num: 3, label: "GPIO 2 (SDA1 I2C)", kind: HeaderPinKind::Gpio(2) },
-    PhysicalPinDef { phys_num: 4, label: "5V PWR", kind: HeaderPinKind::Power5v },
-    PhysicalPinDef { phys_num: 5, label: "GPIO 3 (SCL1 I2C)", kind: HeaderPinKind::Gpio(3) },
-    PhysicalPinDef { phys_num: 6, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 7, label: "GPIO 4 (ARGON BTN)", kind: HeaderPinKind::Gpio(4) },
-    PhysicalPinDef { phys_num: 8, label: "GPIO 14 (UART TX)", kind: HeaderPinKind::Gpio(14) },
-    PhysicalPinDef { phys_num: 9, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 10, label: "GPIO 15 (UART RX)", kind: HeaderPinKind::Gpio(15) },
-    PhysicalPinDef { phys_num: 11, label: "GPIO 17", kind: HeaderPinKind::Gpio(17) },
-    PhysicalPinDef { phys_num: 12, label: "GPIO 18 (PCM CLK)", kind: HeaderPinKind::Gpio(18) },
-    PhysicalPinDef { phys_num: 13, label: "GPIO 27 (ARGON LID)", kind: HeaderPinKind::Gpio(27) },
-    PhysicalPinDef { phys_num: 14, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 15, label: "GPIO 22", kind: HeaderPinKind::Gpio(22) },
-    PhysicalPinDef { phys_num: 16, label: "GPIO 23 (ARGON IR)", kind: HeaderPinKind::Gpio(23) },
-    PhysicalPinDef { phys_num: 17, label: "3.3V PWR", kind: HeaderPinKind::Power3v3 },
-    PhysicalPinDef { phys_num: 18, label: "GPIO 24", kind: HeaderPinKind::Gpio(24) },
-    PhysicalPinDef { phys_num: 19, label: "GPIO 10 (SPI MOSI)", kind: HeaderPinKind::Gpio(10) },
-    PhysicalPinDef { phys_num: 20, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 21, label: "GPIO 9 (SPI MISO)", kind: HeaderPinKind::Gpio(9) },
-    PhysicalPinDef { phys_num: 22, label: "GPIO 25", kind: HeaderPinKind::Gpio(25) },
-    PhysicalPinDef { phys_num: 23, label: "GPIO 11 (SPI SCLK)", kind: HeaderPinKind::Gpio(11) },
-    PhysicalPinDef { phys_num: 24, label: "GPIO 8 (SPI CE0)", kind: HeaderPinKind::Gpio(8) },
-    PhysicalPinDef { phys_num: 25, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 26, label: "GPIO 7 (SPI CE1)", kind: HeaderPinKind::Gpio(7) },
-    PhysicalPinDef { phys_num: 27, label: "ID_SD (EEPROM)", kind: HeaderPinKind::IdEeprom },
-    PhysicalPinDef { phys_num: 28, label: "ID_SC (EEPROM)", kind: HeaderPinKind::IdEeprom },
-    PhysicalPinDef { phys_num: 29, label: "GPIO 5", kind: HeaderPinKind::Gpio(5) },
-    PhysicalPinDef { phys_num: 30, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 31, label: "GPIO 6", kind: HeaderPinKind::Gpio(6) },
-    PhysicalPinDef { phys_num: 32, label: "GPIO 12 (PWM0)", kind: HeaderPinKind::Gpio(12) },
-    PhysicalPinDef { phys_num: 33, label: "GPIO 13 (PWM1)", kind: HeaderPinKind::Gpio(13) },
-    PhysicalPinDef { phys_num: 34, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 35, label: "GPIO 19 (PCM FS)", kind: HeaderPinKind::Gpio(19) },
-    PhysicalPinDef { phys_num: 36, label: "GPIO 16", kind: HeaderPinKind::Gpio(16) },
-    PhysicalPinDef { phys_num: 37, label: "GPIO 26", kind: HeaderPinKind::Gpio(26) },
-    PhysicalPinDef { phys_num: 38, label: "GPIO 20 (PCM DIN)", kind: HeaderPinKind::Gpio(20) },
-    PhysicalPinDef { phys_num: 39, label: "GND", kind: HeaderPinKind::Ground },
-    PhysicalPinDef { phys_num: 40, label: "GPIO 21 (PCM DOUT)", kind: HeaderPinKind::Gpio(21) },
+    PhysicalPinDef {
+        phys_num: 1,
+        label: "3.3V PWR",
+        kind: HeaderPinKind::Power3v3,
+    },
+    PhysicalPinDef {
+        phys_num: 2,
+        label: "5V PWR",
+        kind: HeaderPinKind::Power5v,
+    },
+    PhysicalPinDef {
+        phys_num: 3,
+        label: "GPIO 2 (SDA1 I2C)",
+        kind: HeaderPinKind::Gpio(2),
+    },
+    PhysicalPinDef {
+        phys_num: 4,
+        label: "5V PWR",
+        kind: HeaderPinKind::Power5v,
+    },
+    PhysicalPinDef {
+        phys_num: 5,
+        label: "GPIO 3 (SCL1 I2C)",
+        kind: HeaderPinKind::Gpio(3),
+    },
+    PhysicalPinDef {
+        phys_num: 6,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 7,
+        label: "GPIO 4 (ARGON BTN)",
+        kind: HeaderPinKind::Gpio(4),
+    },
+    PhysicalPinDef {
+        phys_num: 8,
+        label: "GPIO 14 (UART TX)",
+        kind: HeaderPinKind::Gpio(14),
+    },
+    PhysicalPinDef {
+        phys_num: 9,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 10,
+        label: "GPIO 15 (UART RX)",
+        kind: HeaderPinKind::Gpio(15),
+    },
+    PhysicalPinDef {
+        phys_num: 11,
+        label: "GPIO 17",
+        kind: HeaderPinKind::Gpio(17),
+    },
+    PhysicalPinDef {
+        phys_num: 12,
+        label: "GPIO 18 (PCM CLK)",
+        kind: HeaderPinKind::Gpio(18),
+    },
+    PhysicalPinDef {
+        phys_num: 13,
+        label: "GPIO 27 (ARGON LID)",
+        kind: HeaderPinKind::Gpio(27),
+    },
+    PhysicalPinDef {
+        phys_num: 14,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 15,
+        label: "GPIO 22",
+        kind: HeaderPinKind::Gpio(22),
+    },
+    PhysicalPinDef {
+        phys_num: 16,
+        label: "GPIO 23 (ARGON IR)",
+        kind: HeaderPinKind::Gpio(23),
+    },
+    PhysicalPinDef {
+        phys_num: 17,
+        label: "3.3V PWR",
+        kind: HeaderPinKind::Power3v3,
+    },
+    PhysicalPinDef {
+        phys_num: 18,
+        label: "GPIO 24",
+        kind: HeaderPinKind::Gpio(24),
+    },
+    PhysicalPinDef {
+        phys_num: 19,
+        label: "GPIO 10 (SPI MOSI)",
+        kind: HeaderPinKind::Gpio(10),
+    },
+    PhysicalPinDef {
+        phys_num: 20,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 21,
+        label: "GPIO 9 (SPI MISO)",
+        kind: HeaderPinKind::Gpio(9),
+    },
+    PhysicalPinDef {
+        phys_num: 22,
+        label: "GPIO 25",
+        kind: HeaderPinKind::Gpio(25),
+    },
+    PhysicalPinDef {
+        phys_num: 23,
+        label: "GPIO 11 (SPI SCLK)",
+        kind: HeaderPinKind::Gpio(11),
+    },
+    PhysicalPinDef {
+        phys_num: 24,
+        label: "GPIO 8 (SPI CE0)",
+        kind: HeaderPinKind::Gpio(8),
+    },
+    PhysicalPinDef {
+        phys_num: 25,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 26,
+        label: "GPIO 7 (SPI CE1)",
+        kind: HeaderPinKind::Gpio(7),
+    },
+    PhysicalPinDef {
+        phys_num: 27,
+        label: "ID_SD (EEPROM)",
+        kind: HeaderPinKind::IdEeprom,
+    },
+    PhysicalPinDef {
+        phys_num: 28,
+        label: "ID_SC (EEPROM)",
+        kind: HeaderPinKind::IdEeprom,
+    },
+    PhysicalPinDef {
+        phys_num: 29,
+        label: "GPIO 5",
+        kind: HeaderPinKind::Gpio(5),
+    },
+    PhysicalPinDef {
+        phys_num: 30,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 31,
+        label: "GPIO 6",
+        kind: HeaderPinKind::Gpio(6),
+    },
+    PhysicalPinDef {
+        phys_num: 32,
+        label: "GPIO 12 (PWM0)",
+        kind: HeaderPinKind::Gpio(12),
+    },
+    PhysicalPinDef {
+        phys_num: 33,
+        label: "GPIO 13 (PWM1)",
+        kind: HeaderPinKind::Gpio(13),
+    },
+    PhysicalPinDef {
+        phys_num: 34,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 35,
+        label: "GPIO 19 (PCM FS)",
+        kind: HeaderPinKind::Gpio(19),
+    },
+    PhysicalPinDef {
+        phys_num: 36,
+        label: "GPIO 16",
+        kind: HeaderPinKind::Gpio(16),
+    },
+    PhysicalPinDef {
+        phys_num: 37,
+        label: "GPIO 26",
+        kind: HeaderPinKind::Gpio(26),
+    },
+    PhysicalPinDef {
+        phys_num: 38,
+        label: "GPIO 20 (PCM DIN)",
+        kind: HeaderPinKind::Gpio(20),
+    },
+    PhysicalPinDef {
+        phys_num: 39,
+        label: "GND",
+        kind: HeaderPinKind::Ground,
+    },
+    PhysicalPinDef {
+        phys_num: 40,
+        label: "GPIO 21 (PCM DOUT)",
+        kind: HeaderPinKind::Gpio(21),
+    },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,18 +371,78 @@ impl GpioSerialLabState {
         let mut pins = Vec::with_capacity(28);
         for bcm in 0..=27u8 {
             let (role_note, default_dir, default_pull, default_high) = match bcm {
-                2 => ("Argon I2C SDA1 (0x1a MCU / 0x3c OLED)", PinDirection::Alt(0), PinPull::Up, true),
-                3 => ("Argon I2C SCL1 (0x1a MCU / 0x3c OLED)", PinDirection::Alt(0), PinPull::Up, true),
-                4 => ("Argon Power Button Pulse Input (20-50ms)", PinDirection::Input, PinPull::Down, false),
-                14 => ("UART0 TXD (Serial Console /dev/ttyS0)", PinDirection::Alt(5), PinPull::None, true),
-                15 => ("UART0 RXD (Serial Console /dev/ttyS0)", PinDirection::Alt(5), PinPull::Up, true),
-                18 => ("PCM_CLK / Hardware PWM0 (BLSTR DAC)", PinDirection::Input, PinPull::Down, false),
-                19 => ("PCM_FS (BLSTR DAC I2S)", PinDirection::Input, PinPull::Down, false),
-                20 => ("PCM_DIN (BLSTR DAC I2S)", PinDirection::Input, PinPull::Down, false),
-                21 => ("PCM_DOUT (BLSTR DAC I2S)", PinDirection::Input, PinPull::Down, false),
-                23 => ("Argon IR Receiver (NEC Protocol)", PinDirection::Input, PinPull::Up, true),
-                27 => ("Argon EON Lid Sensor (Pull-Up)", PinDirection::Input, PinPull::Up, true),
-                _ => ("General Purpose Digital I/O", PinDirection::Input, PinPull::Down, false),
+                2 => (
+                    "Argon I2C SDA1 (0x1a MCU / 0x3c OLED)",
+                    PinDirection::Alt(0),
+                    PinPull::Up,
+                    true,
+                ),
+                3 => (
+                    "Argon I2C SCL1 (0x1a MCU / 0x3c OLED)",
+                    PinDirection::Alt(0),
+                    PinPull::Up,
+                    true,
+                ),
+                4 => (
+                    "Argon Power Button Pulse Input (20-50ms)",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
+                14 => (
+                    "UART0 TXD (Serial Console /dev/ttyS0)",
+                    PinDirection::Alt(5),
+                    PinPull::None,
+                    true,
+                ),
+                15 => (
+                    "UART0 RXD (Serial Console /dev/ttyS0)",
+                    PinDirection::Alt(5),
+                    PinPull::Up,
+                    true,
+                ),
+                18 => (
+                    "PCM_CLK / Hardware PWM0 (BLSTR DAC)",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
+                19 => (
+                    "PCM_FS (BLSTR DAC I2S)",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
+                20 => (
+                    "PCM_DIN (BLSTR DAC I2S)",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
+                21 => (
+                    "PCM_DOUT (BLSTR DAC I2S)",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
+                23 => (
+                    "Argon IR Receiver (NEC Protocol)",
+                    PinDirection::Input,
+                    PinPull::Up,
+                    true,
+                ),
+                27 => (
+                    "Argon EON Lid Sensor (Pull-Up)",
+                    PinDirection::Input,
+                    PinPull::Up,
+                    true,
+                ),
+                _ => (
+                    "General Purpose Digital I/O",
+                    PinDirection::Input,
+                    PinPull::Down,
+                    false,
+                ),
             };
             pins.push(GpioPinState {
                 bcm,
@@ -323,7 +543,10 @@ impl GpioSerialLabState {
         self.sim_tick = self.sim_tick.wrapping_add(1);
 
         // Try reading real hardware from `pinctrl get 0-27`
-        if let Ok(out) = Command::new("/usr/bin/pinctrl").args(["get", "0-27"]).output() {
+        if let Ok(out) = Command::new("/usr/bin/pinctrl")
+            .args(["get", "0-27"])
+            .output()
+        {
             if out.status.success() {
                 self.hw_access_unlocked = true;
                 let stdout = String::from_utf8_lossy(&out.stdout);
@@ -374,15 +597,15 @@ impl GpioSerialLabState {
                 match pin.bcm {
                     2 | 3 => {
                         // Simulate I2C clock/data bursts
-                        pin.level_high = (self.sim_tick + pin.bcm as u64) % 3 != 0;
+                        pin.level_high = !(self.sim_tick + pin.bcm as u64).is_multiple_of(3);
                     }
                     4 => {
                         // Simulate periodic Argon power button pulse every 8 ticks
-                        pin.level_high = self.sim_tick % 8 == 0;
+                        pin.level_high = self.sim_tick.is_multiple_of(8);
                     }
                     23 => {
                         // Simulate IR receiver active-low pulse burst
-                        pin.level_high = self.sim_tick % 5 != 0;
+                        pin.level_high = !self.sim_tick.is_multiple_of(5);
                     }
                     _ => {}
                 }
@@ -603,7 +826,9 @@ impl GpioSerialLabState {
             "fan" if parts.len() >= 2 => {
                 if let Ok(spd) = parts[1].parse::<u8>() {
                     match crate::argon::set_immediate_fan_speed(spd) {
-                        Ok(m) => self.push_log("RX", &format!("I2C 0x1a [0x80] <= {spd}% ({m})"), b""),
+                        Ok(m) => {
+                            self.push_log("RX", &format!("I2C 0x1a [0x80] <= {spd}% ({m})"), b"")
+                        }
                         Err(e) => self.push_log("ERR", &e, b""),
                     }
                 }

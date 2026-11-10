@@ -3,6 +3,7 @@ pub mod gpio_lab;
 pub mod i18n;
 pub mod overclock;
 pub mod privileged;
+pub mod system_colors;
 pub mod telemetry;
 pub mod theme;
 pub mod ui;
