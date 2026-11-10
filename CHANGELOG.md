@@ -21,12 +21,15 @@ First public release.
 - `config.txt` hardware toggles: I2C, SPI, I2S, audio, UART, VC4 KMS, camera and display detection, Argon BLSTR DAC and IR receiver.
 - GPIO and serial lab: 40-pin logic analyzer and a serial/I2C console.
 - `argononed` service management with an explanation of its role before it is stopped.
-- Four interface themes. The KDE and Breeze themes follow the desktop color scheme on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, in light and dark variants with enforced contrast.
-- English interface by default, with Brazilian Portuguese available from the language switch or `--pt`.
-- Language, theme and last tab are remembered between sessions.
+- Settings page with independent appearance options: sidebar or top-tab navigation, system or AORUS colors, and compact, charts or gauges dashboards, plus interface scaling from 80% to 150%.
+- System colors follow the desktop scheme on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, in light and dark variants with enforced contrast.
+- Layouts adapt to narrow windows: dashboard rings and controls reflow, the GPIO header switches to a single column and navigation becomes a wrapping tab strip.
+- English interface by default, with Brazilian Portuguese available in Settings or with `--pt`.
+- Preferences (appearance, language, temperature unit, scale and last page) are remembered between sessions. The temperature unit shown in the app is independent of the case OLED setting.
 - Packages for Debian and Ubuntu (`.deb`, amd64 and arm64), Fedora (`.rpm`, x86_64 and aarch64) and Arch Linux (`.pkg.tar.zst` and `PKGBUILD`).
 - Packages install udev rules, the `i2c` and `gpio` groups and load `i2c-dev` at boot, so hardware access works without running the application as root.
 - `--status` command-line report with the detected hardware and the current overclock.
+- `scripts/bump-version.sh` for MAJOR.MINOR.PATCH version bumps and release tags; version tags publish a GitHub Release automatically.
 
 ### Security
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.

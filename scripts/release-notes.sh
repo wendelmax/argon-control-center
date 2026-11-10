@@ -94,7 +94,7 @@ Arch Linux (x86_64 package, or build from \`packaging/arch/PKGBUILD\` on Arch Li
 sudo pacman -U ./$ARCH_PKG
 \`\`\`
 
-The packages configure hardware access (udev rules, \`i2c\` and \`gpio\` groups, \`i2c-dev\` at boot) and add the user who ran \`sudo\` to the hardware groups. Log out and back in afterwards. See the [README]($REPO_URL#-permissions) for source installs.
+The packages configure hardware access (udev rules, \`i2c\` and \`gpio\` groups, \`i2c-dev\` at boot) and add the user who ran \`sudo\` to the hardware groups. Log out and back in afterwards. See the [README]($REPO_URL#permissions) for source installs.
 
 ## Verification
 

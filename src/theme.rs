@@ -8,19 +8,6 @@ use egui::{
 use std::collections::VecDeque;
 use std::f32::consts::PI;
 
-/// Available UI Theme & Layout Models.
-/// - `KdeCompactOverview`: All-in-One No-Scroll Compact Overview (`overview.page` sensors + Area charts + Direct Fan/OC/Daemon controls on a single screen).
-/// - `KdeBreeze`: Full KDE Plasma System Monitor (`plasma-systemmonitor`) Kirigami sidebar + Donut rings + stacked `history.page` area charts.
-/// - `BreezeClassicLayout`: KDE Breeze Dark color palette (`~/.config/kdeglobals`) & subtle borders applied over the classic v1 layout & radial gauges.
-/// - `AorusGaming`: Saved v1.0 Gigabyte AORUS Gaming theme (top double bar, automotive radial gauges, neon orange/cyan accents).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ThemeModel {
-    KdeCompactOverview,
-    KdeBreeze,
-    BreezeClassicLayout,
-    AorusGaming,
-}
-
 /// Desktop palette (historically KDE-only, now resolved from any desktop via [`crate::system_colors`]):
 /// KDE `kdeglobals`, GTK theme `@define-color`s (GNOME/Cinnamon/MATE/XFCE…), the XDG portal
 /// accent / dark-light preference, then Breeze Dark defaults.
@@ -195,6 +182,31 @@ impl KdeBreezePalette {
         };
         p.finalize();
         p
+    }
+
+    /// The fixed AORUS neon palette expressed as a desktop palette, so every layout and
+    /// dashboard style can be drawn with it.
+    pub fn aorus() -> Self {
+        let a = UiColors::AORUS;
+        let c = SystemColors {
+            prefer_dark: Some(true),
+            window_bg: Some(a.bg_dark),
+            window_alt_bg: Some(a.bg_panel),
+            view_bg: Some(a.bg_subgroup),
+            view_alt_bg: Some(a.bg_card),
+            header_bg: Some(a.bg_panel),
+            button_bg: Some(a.btn_slate),
+            selection_bg: Some(a.orange),
+            accent: Some(a.orange),
+            text_normal: Some(a.text_primary),
+            text_inactive: Some(a.text_secondary),
+            positive: Some(a.green),
+            neutral: Some(a.amber),
+            negative: Some(a.red),
+            visited: Some(a.cyan),
+            border: Some(a.border_subtle),
+        };
+        Self::from_system_colors(&c, PaletteSource::Fallback, DesktopKind::Other)
     }
 
     /// Computes derived surfaces so every widget adapts to dark *and* light schemes.
