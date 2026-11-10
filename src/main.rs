@@ -1,4 +1,5 @@
 pub mod argon;
+pub mod board;
 pub mod gpio_lab;
 pub mod i18n;
 pub mod overclock;
@@ -30,7 +31,9 @@ fn main() -> eframe::Result<()> {
         tel.refresh(&curve);
         let oc = load_boot_config();
         println!("=== ARGON AORUS CONTROL CENTER — TELEMETRY / TELEMETRIA ===");
+        let board = crate::board::current();
         println!("Board / Placa : {}", tel.board_model);
+        println!("Detected      : {}", board.summary());
         println!("OS / Kernel   : {} ({})", tel.os_name, tel.kernel_version);
         println!(
             "CPU Clock     : {} MHz (Scale: {}-{} MHz, Governor: {})",
@@ -45,8 +48,12 @@ fn main() -> eframe::Result<()> {
             tel.ram_used_mb, tel.ram_total_mb, tel.ram_usage_pct
         );
         println!(
-            "Boot OC       : ARM={} MHz, GPU={} MHz, OverVoltage={}, Boost={}",
-            oc.arm_freq_mhz, oc.gpu_freq_mhz, oc.over_voltage, oc.arm_boost
+            "Boot OC       : ARM={} MHz, GPU={} MHz, OverVoltage={}, OV delta={} µV, Boost={}",
+            oc.arm_freq_mhz,
+            oc.gpu_freq_mhz,
+            oc.over_voltage,
+            oc.over_voltage_delta_uv,
+            oc.arm_boost
         );
         return Ok(());
     }

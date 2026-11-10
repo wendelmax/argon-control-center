@@ -687,11 +687,17 @@ impl ArgonControlCenterApp {
                 );
 
                 ui.add_space(4.0);
+                let board = crate::board::current();
                 ui.label(
-                    RichText::new(&self.telemetry.board_model)
+                    RichText::new(board.summary())
                         .size(11.0)
                         .color(pal.text_inactive),
-                );
+                )
+                .on_hover_text(format!(
+                    "{}\n\n{}",
+                    t.board_detect_tip,
+                    board.details()
+                ));
                 ui.label(
                     RichText::new(format!("IP: {}", self.telemetry.ip_address))
                         .size(11.0)
@@ -844,11 +850,13 @@ impl ArgonControlCenterApp {
                     .strong()
                     .color(AORUS_ORANGE),
             );
+            let board = crate::board::current();
             ui.label(
-                RichText::new(format!("• {}", self.telemetry.board_model))
+                RichText::new(format!("• {}", board.summary()))
                     .size(12.5)
                     .color(TEXT_SECONDARY),
-            );
+            )
+            .on_hover_text(format!("{}\n\n{}", t.board_detect_tip, board.details()));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Unified Utility Pill Container
@@ -1235,20 +1243,14 @@ impl ArgonControlCenterApp {
                         for preset in [
                             OcPreset::EcoPowerSave,
                             OcPreset::StockBoost,
-                            OcPreset::OcGaming2000,
-                            OcPreset::OcExtreme2147,
+                            OcPreset::OcGaming,
+                            OcPreset::OcExtreme,
                         ] {
                             let is_sel = self.selected_oc_preset == preset;
-                            let short_lbl = match preset {
-                                OcPreset::EcoPowerSave => "🌱 1.5G",
-                                OcPreset::StockBoost => "⚖ 1.8G",
-                                OcPreset::OcGaming2000 => "🚀 2.0G",
-                                OcPreset::OcExtreme2147 => "🔥 2.14G",
-                                OcPreset::Custom => "🎛 Custom",
-                            };
+                            let short_lbl = preset.short_label();
                             if segmented_pill(
                                 ui,
-                                short_lbl,
+                                &short_lbl,
                                 is_sel,
                                 Color32::from_rgb(155, 72, 12),
                                 pal.neutral_orange,
@@ -1261,7 +1263,7 @@ impl ArgonControlCenterApp {
                                     self.boot_oc.arm_freq_mhz.min(self.telemetry.cpu_hw_max_mhz);
                                 self.runtime_governor = if preset == OcPreset::EcoPowerSave {
                                     "powersave".to_string()
-                                } else if preset == OcPreset::OcExtreme2147 {
+                                } else if preset == OcPreset::OcExtreme {
                                     "performance".to_string()
                                 } else {
                                     "schedutil".to_string()
@@ -2148,6 +2150,20 @@ impl ArgonControlCenterApp {
                 .spacing([16.0, 7.0])
                 .show(ui, |ui| {
                     spec_row(ui, t.spec_board, &self.telemetry.board_model);
+                    let board = crate::board::current();
+                    spec_row(
+                        ui,
+                        t.spec_soc,
+                        &format!(
+                            "{} · {}",
+                            board.soc.name(),
+                            board
+                                .ram_mb
+                                .map(|m| format!("{} GB", m / 1024))
+                                .unwrap_or_else(|| "—".into())
+                        ),
+                    );
+                    spec_row(ui, t.spec_case, board.case.name());
                     spec_row(ui, t.spec_os, &self.telemetry.os_name);
                     spec_row(ui, t.spec_kernel, &self.telemetry.kernel_version);
                     spec_row(
@@ -2646,15 +2662,15 @@ impl ArgonControlCenterApp {
                         let presets = [
                             (OcPreset::EcoPowerSave, t.oc_preset_eco_tip),
                             (OcPreset::StockBoost, t.oc_preset_stock_tip),
-                            (OcPreset::OcGaming2000, t.oc_preset_gaming_tip),
-                            (OcPreset::OcExtreme2147, t.oc_preset_extreme_tip),
+                            (OcPreset::OcGaming, t.oc_preset_gaming_tip),
+                            (OcPreset::OcExtreme, t.oc_preset_extreme_tip),
                             (OcPreset::Custom, t.oc_preset_custom_tip),
                         ];
                         for (p, tip) in presets {
                             let is_sel = self.selected_oc_preset == p;
                             let resp = segmented_pill(
                                 ui,
-                                p.label(lang),
+                                &p.label(lang),
                                 is_sel,
                                 BTN_ORANGE_FILL,
                                 AORUS_ORANGE,
@@ -2665,14 +2681,16 @@ impl ArgonControlCenterApp {
                                 match p {
                                     OcPreset::EcoPowerSave => {
                                         self.runtime_governor = "powersave".to_string();
-                                        self.runtime_max_mhz =
-                                            1500.min(self.telemetry.cpu_hw_max_mhz);
+                                        self.runtime_max_mhz = crate::board::current()
+                                            .oc
+                                            .eco_mhz
+                                            .min(self.telemetry.cpu_hw_max_mhz);
                                     }
                                     OcPreset::StockBoost => {
                                         self.runtime_governor = "ondemand".to_string();
                                         self.runtime_max_mhz = self.telemetry.cpu_hw_max_mhz;
                                     }
-                                    OcPreset::OcGaming2000 | OcPreset::OcExtreme2147 => {
+                                    OcPreset::OcGaming | OcPreset::OcExtreme => {
                                         self.runtime_governor = "performance".to_string();
                                         self.runtime_max_mhz = self.telemetry.cpu_hw_max_mhz;
                                     }
@@ -2681,7 +2699,7 @@ impl ArgonControlCenterApp {
                             }
                             aorus_tooltip(
                                 resp,
-                                p.label(lang),
+                                &p.label(lang),
                                 tip,
                                 Some("/boot/firmware/config.txt"),
                             );
@@ -2845,6 +2863,7 @@ impl ArgonControlCenterApp {
                 .inner_margin(egui::Margin::same(10))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    let oc_prof = crate::board::current().oc;
                     egui::Grid::new("firmware_oc_grid")
                         .num_columns(2)
                         .spacing([14.0, 10.0])
@@ -2852,9 +2871,12 @@ impl ArgonControlCenterApp {
                             label_with_tip(ui, t.arm_freq_label, t.arm_freq_tip, Some("arm_freq"));
                             if ui
                                 .add(
-                                    egui::Slider::new(&mut self.boot_oc.arm_freq_mhz, 1200..=2200)
-                                        .step_by(25.0)
-                                        .suffix(" MHz"),
+                                    egui::Slider::new(
+                                        &mut self.boot_oc.arm_freq_mhz,
+                                        oc_prof.arm_range.0..=oc_prof.arm_range.1,
+                                    )
+                                    .step_by(25.0)
+                                    .suffix(" MHz"),
                                 )
                                 .changed()
                             {
@@ -2865,9 +2887,12 @@ impl ArgonControlCenterApp {
                             label_with_tip(ui, t.gpu_freq_label, t.gpu_freq_tip, Some("gpu_freq"));
                             if ui
                                 .add(
-                                    egui::Slider::new(&mut self.boot_oc.gpu_freq_mhz, 400..=750)
-                                        .step_by(25.0)
-                                        .suffix(" MHz"),
+                                    egui::Slider::new(
+                                        &mut self.boot_oc.gpu_freq_mhz,
+                                        oc_prof.gpu_range.0..=oc_prof.gpu_range.1,
+                                    )
+                                    .step_by(25.0)
+                                    .suffix(" MHz"),
                                 )
                                 .changed()
                             {
@@ -2875,33 +2900,59 @@ impl ArgonControlCenterApp {
                             }
                             ui.end_row();
 
-                            label_with_tip(
-                                ui,
-                                t.over_voltage_label,
-                                t.over_voltage_tip,
-                                Some("over_voltage"),
-                            );
-                            ui.horizontal(|ui| {
+                            if oc_prof.uses_ov_delta {
+                                label_with_tip(
+                                    ui,
+                                    "over_voltage_delta",
+                                    t.over_voltage_delta_tip,
+                                    Some("over_voltage_delta (µV)"),
+                                );
                                 if ui
                                     .add(
-                                        egui::Slider::new(&mut self.boot_oc.over_voltage, -4..=8)
-                                            .suffix(" st"),
+                                        egui::Slider::new(
+                                            &mut self.boot_oc.over_voltage_delta_uv,
+                                            0..=150_000,
+                                        )
+                                        .step_by(5_000.0)
+                                        .suffix(" µV"),
                                     )
                                     .changed()
                                 {
                                     self.selected_oc_preset = OcPreset::Custom;
                                 }
-                                ui.label(
-                                    RichText::new(format!(
-                                        "~{:.2}V",
-                                        self.boot_oc.estimated_core_voltage()
-                                    ))
-                                    .size(12.0)
-                                    .strong()
-                                    .color(AORUS_AMBER),
+                                ui.end_row();
+                            } else {
+                                label_with_tip(
+                                    ui,
+                                    t.over_voltage_label,
+                                    t.over_voltage_tip,
+                                    Some("over_voltage"),
                                 );
-                            });
-                            ui.end_row();
+                                ui.horizontal(|ui| {
+                                    if ui
+                                        .add(
+                                            egui::Slider::new(
+                                                &mut self.boot_oc.over_voltage,
+                                                -4..=8,
+                                            )
+                                            .suffix(" st"),
+                                        )
+                                        .changed()
+                                    {
+                                        self.selected_oc_preset = OcPreset::Custom;
+                                    }
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "~{:.2}V",
+                                            self.boot_oc.estimated_core_voltage()
+                                        ))
+                                        .size(12.0)
+                                        .strong()
+                                        .color(AORUS_AMBER),
+                                    );
+                                });
+                                ui.end_row();
+                            }
 
                             label_with_tip(
                                 ui,
