@@ -12,3 +12,15 @@ run = "cargo run --release"
 [tasks.check]
 description = "Run cargo check and tests"
 run = "cargo test"
+
+[tasks.install]
+description = "Build release and install binary + menu entry to ~/.local (PREFIX to override)"
+run = "scripts/install.sh"
+
+[tasks.uninstall]
+description = "Remove installed binary and menu entry"
+run = "scripts/install.sh --uninstall"
+
+[tasks.lint]
+description = "Format check + strict clippy (same as CI)"
+run = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"

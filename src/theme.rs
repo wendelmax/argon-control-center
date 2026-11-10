@@ -507,6 +507,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn light_palette_accents_are_readable() {
+        let c = crate::system_colors::SystemColors {
+            window_bg: Some(Color32::from_rgb(250, 250, 250)),
+            view_bg: Some(Color32::WHITE),
+            accent: Some(Color32::from_rgb(30, 230, 255)),
+            ..Default::default()
+        };
+        let pal =
+            KdeBreezePalette::from_system_colors(&c, PaletteSource::GtkTheme, DesktopKind::Gnome);
+        let ui = UiColors::from_palette(&pal);
+        for col in [ui.cyan, ui.green, ui.red, ui.orange, ui.amber] {
+            assert!(contrast_ratio(col, pal.window_bg) >= 3.0, "{col:?}");
+        }
+        assert!(contrast_ratio(ui.text_secondary, pal.view_alt_bg) >= 4.5);
+        assert!(contrast_ratio(ui.btn_cyan, Color32::WHITE) >= 4.5);
+    }
+
+    #[test]
     fn test_parse_kdeglobals_palette() {
         let sample = "[Colors:Window]\nBackgroundNormal=32,35,38\n[Colors:View]\nBackgroundNormal=20,22,24\nDecorationFocus=61,174,233\n";
         let mut pal = KdeBreezePalette::default();
@@ -515,4 +533,119 @@ mod tests {
         assert_eq!(pal.view_bg, Color32::from_rgb(20, 22, 24));
         assert_eq!(pal.focus_blue, Color32::from_rgb(61, 174, 233));
     }
+}
+
+/// Semantic colors used by the shared tabs (Smart Fan, Overclock, Features, GPIO, Services…).
+/// AORUS keeps its neon look; the KDE/Breeze themes derive everything from the desktop palette,
+/// with accents darkened/lightened until they stay readable on the window background.
+#[derive(Debug, Clone, Copy)]
+pub struct UiColors {
+    pub bg_dark: Color32,
+    pub bg_panel: Color32,
+    pub bg_card: Color32,
+    pub bg_subgroup: Color32,
+    pub bg_card_hover: Color32,
+    pub border_subtle: Color32,
+    pub orange: Color32,
+    pub amber: Color32,
+    pub cyan: Color32,
+    pub green: Color32,
+    pub red: Color32,
+    pub btn_orange: Color32,
+    pub btn_green: Color32,
+    pub btn_cyan: Color32,
+    pub btn_slate: Color32,
+    pub text_primary: Color32,
+    pub text_secondary: Color32,
+}
+
+impl UiColors {
+    pub const AORUS: UiColors = UiColors {
+        bg_dark: Color32::from_rgb(10, 14, 20),
+        bg_panel: Color32::from_rgb(16, 22, 33),
+        bg_card: Color32::from_rgb(22, 30, 46),
+        bg_subgroup: Color32::from_rgb(15, 21, 32),
+        bg_card_hover: Color32::from_rgb(38, 52, 78),
+        border_subtle: Color32::from_rgb(56, 72, 102),
+        orange: Color32::from_rgb(255, 115, 20),
+        amber: Color32::from_rgb(255, 185, 30),
+        cyan: Color32::from_rgb(30, 230, 255),
+        green: Color32::from_rgb(35, 235, 135),
+        red: Color32::from_rgb(255, 75, 100),
+        btn_orange: Color32::from_rgb(195, 65, 10),
+        btn_green: Color32::from_rgb(12, 118, 68),
+        btn_cyan: Color32::from_rgb(12, 102, 142),
+        btn_slate: Color32::from_rgb(30, 41, 62),
+        text_primary: Color32::from_rgb(248, 250, 252),
+        text_secondary: Color32::from_rgb(203, 213, 225),
+    };
+
+    pub fn from_palette(p: &KdeBreezePalette) -> Self {
+        let bg = p.window_bg;
+        let card = p.view_alt_bg;
+        // Accent used as text/strokes: >= 3:1 against both window and card surfaces.
+        let accent = |c: Color32| readable_on(readable_on(c, bg, 3.0), card, 3.0);
+        // Button fill carrying white text: >= 4.5:1 against white.
+        let fill = |c: Color32| {
+            let mut f = c;
+            for _ in 0..12 {
+                if contrast_ratio(f, Color32::WHITE) >= 4.5 {
+                    break;
+                }
+                f = mix(f, Color32::BLACK, 0.12);
+            }
+            f
+        };
+        let amber_base = mix(p.neutral_orange, Color32::from_rgb(240, 190, 30), 0.55);
+        let text_secondary = readable_on(p.text_inactive, card, 4.5);
+        UiColors {
+            bg_dark: bg,
+            bg_panel: p.header_bg,
+            bg_card: card,
+            bg_subgroup: p.view_bg,
+            bg_card_hover: p.hover_bg,
+            border_subtle: p.border_subtle,
+            orange: accent(p.neutral_orange),
+            amber: accent(amber_base),
+            cyan: accent(p.focus_blue),
+            green: accent(p.positive_green),
+            red: accent(p.negative_red),
+            btn_orange: fill(p.neutral_orange),
+            btn_green: fill(p.positive_green),
+            btn_cyan: fill(p.focus_blue),
+            btn_slate: p.button_bg,
+            text_primary: readable_on(p.text_normal, card, 4.5),
+            text_secondary,
+        }
+    }
+}
+
+/// Moves `c` towards black (light bg) or white (dark bg) until it reaches `min_ratio` on `bg`.
+pub fn readable_on(c: Color32, bg: Color32, min_ratio: f32) -> Color32 {
+    let target = if luminance(bg) > 0.4 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    let mut out = c;
+    for _ in 0..16 {
+        if contrast_ratio(out, bg) >= min_ratio {
+            break;
+        }
+        out = mix(out, target, 0.12);
+    }
+    out
+}
+
+thread_local! {
+    static UI_COLORS: std::cell::Cell<UiColors> = const { std::cell::Cell::new(UiColors::AORUS) };
+}
+
+/// Active semantic colors for this frame (the UI runs on a single thread).
+pub fn uc() -> UiColors {
+    UI_COLORS.with(|c| c.get())
+}
+
+pub fn set_ui_colors(colors: UiColors) {
+    UI_COLORS.with(|c| c.set(colors));
 }

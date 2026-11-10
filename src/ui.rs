@@ -18,7 +18,7 @@ use crate::privileged::is_root;
 use crate::telemetry::TelemetryState;
 use crate::theme::{
     configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart,
-    draw_kde_donut_chart_sized, KdeBreezePalette, ThemeModel,
+    draw_kde_donut_chart_sized, set_ui_colors, uc, KdeBreezePalette, ThemeModel, UiColors,
 };
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Response, RichText, Sense,
@@ -30,29 +30,12 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 // High-Contrast Gigabyte AORUS Palette (WCAG AAA readable)
-pub const BG_DARK: Color32 = Color32::from_rgb(10, 14, 20);
-pub const BG_PANEL: Color32 = Color32::from_rgb(16, 22, 33);
-pub const BG_CARD: Color32 = Color32::from_rgb(22, 30, 46);
-pub const BG_SUBGROUP: Color32 = Color32::from_rgb(15, 21, 32);
-pub const BG_CARD_HOVER: Color32 = Color32::from_rgb(38, 52, 78);
-pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(56, 72, 102);
 
 // Accent Colors
-pub const AORUS_ORANGE: Color32 = Color32::from_rgb(255, 115, 20);
-pub const AORUS_AMBER: Color32 = Color32::from_rgb(255, 185, 30);
-pub const ARGON_CYAN: Color32 = Color32::from_rgb(30, 230, 255);
-pub const NEON_GREEN: Color32 = Color32::from_rgb(35, 235, 135);
-pub const DANGER_RED: Color32 = Color32::from_rgb(255, 75, 100);
 
 // High-Contrast Button Fills (paired with pure WHITE text)
-pub const BTN_ORANGE_FILL: Color32 = Color32::from_rgb(195, 65, 10);
-pub const BTN_GREEN_FILL: Color32 = Color32::from_rgb(12, 118, 68);
-pub const BTN_CYAN_FILL: Color32 = Color32::from_rgb(12, 102, 142);
-pub const BTN_SLATE_FILL: Color32 = Color32::from_rgb(30, 41, 62);
 
 // High-Contrast Typography Colors
-pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(248, 250, 252);
-pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(203, 213, 225);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
@@ -254,38 +237,38 @@ pub fn configure_aorus_style(ctx: &egui::Context) {
     style.interaction.tooltip_delay = 0.15;
 
     let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = BG_DARK;
-    visuals.window_fill = BG_PANEL;
-    visuals.window_stroke = Stroke::new(1.2_f32, AORUS_ORANGE);
+    visuals.panel_fill = uc().bg_dark;
+    visuals.window_fill = uc().bg_panel;
+    visuals.window_stroke = Stroke::new(1.2_f32, uc().orange);
     visuals.extreme_bg_color = Color32::from_rgb(8, 12, 18);
-    visuals.faint_bg_color = BG_CARD;
+    visuals.faint_bg_color = uc().bg_card;
     visuals.code_bg_color = Color32::from_rgb(9, 13, 21);
 
-    visuals.selection.bg_fill = BTN_ORANGE_FILL;
+    visuals.selection.bg_fill = uc().btn_orange;
     visuals.selection.stroke = Stroke::new(1.5_f32, Color32::WHITE);
 
-    visuals.widgets.noninteractive.bg_fill = BG_CARD;
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER_SUBTLE);
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.2_f32, TEXT_PRIMARY);
+    visuals.widgets.noninteractive.bg_fill = uc().bg_card;
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, uc().border_subtle);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.2_f32, uc().text_primary);
     visuals.widgets.noninteractive.corner_radius = CornerRadius::same(5);
 
-    visuals.widgets.inactive.bg_fill = BTN_SLATE_FILL;
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER_SUBTLE);
+    visuals.widgets.inactive.bg_fill = uc().btn_slate;
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, uc().border_subtle);
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.2_f32, Color32::WHITE);
     visuals.widgets.inactive.corner_radius = CornerRadius::same(5);
 
-    visuals.widgets.hovered.bg_fill = BG_CARD_HOVER;
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5_f32, AORUS_ORANGE);
+    visuals.widgets.hovered.bg_fill = uc().bg_card_hover;
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5_f32, uc().orange);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     visuals.widgets.hovered.corner_radius = CornerRadius::same(5);
 
-    visuals.widgets.active.bg_fill = BTN_ORANGE_FILL;
+    visuals.widgets.active.bg_fill = uc().btn_orange;
     visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     visuals.widgets.active.corner_radius = CornerRadius::same(5);
 
-    visuals.widgets.open.bg_fill = BG_CARD_HOVER;
-    visuals.widgets.open.bg_stroke = Stroke::new(1.5_f32, ARGON_CYAN);
+    visuals.widgets.open.bg_fill = uc().bg_card_hover;
+    visuals.widgets.open.bg_stroke = Stroke::new(1.5_f32, uc().cyan);
     visuals.widgets.open.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     visuals.widgets.open.corner_radius = CornerRadius::same(5);
 
@@ -295,6 +278,11 @@ pub fn configure_aorus_style(ctx: &egui::Context) {
 
 impl eframe::App for ArgonControlCenterApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        set_ui_colors(if self.theme_model == ThemeModel::AorusGaming {
+            UiColors::AORUS
+        } else {
+            UiColors::from_palette(&self.kde_palette)
+        });
         // Poll serial RX continuously when on GPIO Lab tab or connected
         if self.gpio_lab.serial_connected {
             self.gpio_lab.poll_serial_rx();
@@ -391,17 +379,17 @@ impl eframe::App for ArgonControlCenterApp {
                 let top_fill = if is_breeze_pal {
                     self.kde_palette.header_bg
                 } else {
-                    BG_PANEL
+                    uc().bg_panel
                 };
                 let body_fill = if is_breeze_pal {
                     self.kde_palette.window_bg
                 } else {
-                    BG_DARK
+                    uc().bg_dark
                 };
                 let bdr = if is_breeze_pal {
                     self.kde_palette.border_subtle
                 } else {
-                    BORDER_SUBTLE
+                    uc().border_subtle
                 };
 
                 egui::TopBottomPanel::top("aorus_top_bar")
@@ -456,8 +444,8 @@ impl ArgonControlCenterApp {
             (
                 ThemeModel::AorusGaming,
                 t.theme_aorus_label,
-                BTN_ORANGE_FILL,
-                AORUS_ORANGE,
+                uc().btn_orange,
+                uc().orange,
             ),
             (
                 ThemeModel::BreezeClassicLayout,
@@ -823,11 +811,11 @@ impl ArgonControlCenterApp {
         ui.horizontal_wrapped(|ui| {
             let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(32.0, 32.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(logo_rect, CornerRadius::same(6), BTN_ORANGE_FILL);
+            painter.rect_filled(logo_rect, CornerRadius::same(6), uc().btn_orange);
             painter.rect_stroke(
                 logo_rect,
                 CornerRadius::same(6),
-                Stroke::new(1.5_f32, AORUS_ORANGE),
+                Stroke::new(1.5_f32, uc().orange),
                 StrokeKind::Inside,
             );
             painter.text(
@@ -848,21 +836,21 @@ impl ArgonControlCenterApp {
                 RichText::new("CONTROL CENTER")
                     .size(18.5)
                     .strong()
-                    .color(AORUS_ORANGE),
+                    .color(uc().orange),
             );
             let board = crate::board::current();
             ui.label(
                 RichText::new(format!("• {}", board.summary()))
                     .size(12.5)
-                    .color(TEXT_SECONDARY),
+                    .color(uc().text_secondary),
             )
             .on_hover_text(format!("{}\n\n{}", t.board_detect_tip, board.details()));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Unified Utility Pill Container
                 egui::Frame::new()
-                    .fill(BG_SUBGROUP)
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(6))
                     .inner_margin(egui::Margin::symmetric(8, 4))
                     .show(ui, |ui| {
@@ -870,9 +858,9 @@ impl ArgonControlCenterApp {
 
                         // 1. Daemon Status Badge with Click-to-Manage & Tooltip
                         let (daemon_col, daemon_txt) = if self.telemetry.argon_service_active {
-                            (NEON_GREEN, t.daemon_online)
+                            (uc().green, t.daemon_online)
                         } else {
-                            (DANGER_RED, t.daemon_offline)
+                            (uc().red, t.daemon_offline)
                         };
                         let badge_resp = ui.add(
                             egui::Button::new(
@@ -901,7 +889,7 @@ impl ArgonControlCenterApp {
                         {
                             let is_sel = self.lang == lang_opt;
                             let resp =
-                                segmented_pill(ui, short_lbl, is_sel, BTN_CYAN_FILL, ARGON_CYAN);
+                                segmented_pill(ui, short_lbl, is_sel, uc().btn_cyan, uc().cyan);
                             if resp.clicked() && !is_sel {
                                 self.lang = lang_opt;
                             }
@@ -916,7 +904,7 @@ impl ArgonControlCenterApp {
                         {
                             let is_sel = self.temp_unit == u_opt;
                             let resp =
-                                segmented_pill(ui, u_lbl, is_sel, BTN_ORANGE_FILL, AORUS_ORANGE);
+                                segmented_pill(ui, u_lbl, is_sel, uc().btn_orange, uc().orange);
                             if resp.clicked() && !is_sel {
                                 self.temp_unit = u_opt;
                                 let res = save_temp_unit(u_opt);
@@ -942,8 +930,8 @@ impl ArgonControlCenterApp {
 
         // Second Row: Unified Segmented Navigation Strip
         egui::Frame::new()
-            .fill(BG_SUBGROUP)
-            .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+            .fill(uc().bg_subgroup)
+            .stroke(Stroke::new(1.0_f32, uc().border_subtle))
             .corner_radius(CornerRadius::same(6))
             .inner_margin(egui::Margin::symmetric(6, 4))
             .show(ui, |ui| {
@@ -970,12 +958,12 @@ impl ArgonControlCenterApp {
                     for (tab, title, tip) in tabs {
                         let is_active = self.active_tab == tab;
                         let fill = if is_active {
-                            BTN_ORANGE_FILL
+                            uc().btn_orange
                         } else {
                             Color32::TRANSPARENT
                         };
                         let stroke = if is_active {
-                            Stroke::new(1.5_f32, AORUS_ORANGE)
+                            Stroke::new(1.5_f32, uc().orange)
                         } else {
                             Stroke::NONE
                         };
@@ -985,7 +973,7 @@ impl ArgonControlCenterApp {
                                 if is_active {
                                     Color32::WHITE
                                 } else {
-                                    TEXT_SECONDARY
+                                    uc().text_secondary
                                 },
                             ))
                             .fill(fill)
@@ -1007,9 +995,9 @@ impl ArgonControlCenterApp {
         ui.horizontal_wrapped(|ui| {
             let msg = self.status_message.as_deref().unwrap_or(t.ready_status);
             let status_color = if self.status_is_error {
-                DANGER_RED
+                uc().red
             } else {
-                ARGON_CYAN
+                uc().cyan
             };
             ui.label(RichText::new(msg).size(12.5).strong().color(status_color));
 
@@ -1030,7 +1018,7 @@ impl ArgonControlCenterApp {
                             priv_label
                         ))
                         .size(12.0)
-                        .color(TEXT_SECONDARY),
+                        .color(uc().text_secondary),
                     )
                     .sense(Sense::hover()),
                 );
@@ -1744,14 +1732,14 @@ impl ArgonControlCenterApp {
                     left_ui,
                     t.card_telemetry_60s,
                     t.card_telemetry_tip,
-                    ARGON_CYAN,
+                    uc().cyan,
                     |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            legend_badge(ui, t.legend_temp, ARGON_CYAN);
+                            legend_badge(ui, t.legend_temp, uc().cyan);
                             ui.add_space(8.0);
-                            legend_badge(ui, t.legend_cpu_load, AORUS_ORANGE);
+                            legend_badge(ui, t.legend_cpu_load, uc().orange);
                             ui.add_space(8.0);
-                            legend_badge(ui, t.legend_fan_pwm, NEON_GREEN);
+                            legend_badge(ui, t.legend_fan_pwm, uc().green);
                         });
                         ui.add_space(6.0);
                         draw_multi_telemetry_chart(
@@ -1788,7 +1776,7 @@ impl ArgonControlCenterApp {
             ui,
             t.gauge_cpu_clock,
             t.gauge_cpu_clock_tip,
-            AORUS_ORANGE,
+            uc().orange,
             |ui| {
                 let max_scale = self.telemetry.cpu_hw_max_mhz.max(2200) as f32;
                 let ratio = (self.telemetry.cpu_cur_freq_mhz as f32 / max_scale).clamp(0.0, 1.0);
@@ -1798,7 +1786,7 @@ impl ArgonControlCenterApp {
                     &format!("{}", self.telemetry.cpu_cur_freq_mhz),
                     "MHz",
                     &format!("GOV: {}", self.telemetry.cpu_governor.to_uppercase()),
-                    AORUS_ORANGE,
+                    uc().orange,
                 );
                 aorus_tooltip(
                     resp,
@@ -1813,11 +1801,11 @@ impl ArgonControlCenterApp {
     fn draw_gauge_cpu_temp(&self, ui: &mut Ui) {
         let t = texts(self.lang);
         let temp_color = if self.telemetry.cpu_temp_c >= 75.0 {
-            DANGER_RED
+            uc().red
         } else if self.telemetry.cpu_temp_c >= 60.0 {
-            AORUS_AMBER
+            uc().amber
         } else {
-            ARGON_CYAN
+            uc().cyan
         };
         aorus_card_with_tip(
             ui,
@@ -1860,7 +1848,7 @@ impl ArgonControlCenterApp {
             ui,
             t.gauge_fan_speed,
             t.gauge_fan_speed_tip,
-            NEON_GREEN,
+            uc().green,
             |ui| {
                 let ratio = (self.telemetry.target_fan_speed_pct as f32 / 100.0).clamp(0.0, 1.0);
                 let mode_str = if self.telemetry.manual_fan_override.is_some() {
@@ -1874,7 +1862,7 @@ impl ArgonControlCenterApp {
                     &format!("{}", self.telemetry.target_fan_speed_pct),
                     "% PWM",
                     mode_str,
-                    NEON_GREEN,
+                    uc().green,
                 );
                 aorus_tooltip(
                     resp,
@@ -1888,7 +1876,7 @@ impl ArgonControlCenterApp {
 
     fn draw_gauge_memory(&self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card_with_tip(ui, t.gauge_memory, t.gauge_memory_tip, AORUS_AMBER, |ui| {
+        aorus_card_with_tip(ui, t.gauge_memory, t.gauge_memory_tip, uc().amber, |ui| {
             let ratio = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
             let resp = draw_radial_gauge(
                 ui,
@@ -1899,7 +1887,7 @@ impl ArgonControlCenterApp {
                     "{} / {} MB",
                     self.telemetry.ram_used_mb, self.telemetry.ram_total_mb
                 ),
-                AORUS_AMBER,
+                uc().amber,
             );
             aorus_tooltip(
                 resp,
@@ -1916,7 +1904,7 @@ impl ArgonControlCenterApp {
             ui,
             t.card_core_load,
             t.card_core_load_tip,
-            AORUS_ORANGE,
+            uc().orange,
             |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
@@ -1925,13 +1913,13 @@ impl ArgonControlCenterApp {
                             t.total_cpu_load, self.telemetry.cpu_total_usage_pct
                         ))
                         .strong()
-                        .color(TEXT_PRIMARY),
+                        .color(uc().text_primary),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let (v_txt, v_col) = if self.telemetry.undervoltage_alarm {
-                            (t.voltage_alert, DANGER_RED)
+                            (t.voltage_alert, uc().red)
                         } else {
-                            (t.voltage_stable, NEON_GREEN)
+                            (t.voltage_stable, uc().green)
                         };
                         let v_resp = ui.add(
                             egui::Label::new(
@@ -1958,7 +1946,7 @@ impl ArgonControlCenterApp {
                         core_name,
                         *pct / 100.0,
                         &format!("{pct:.1}%  ({} MHz)", self.telemetry.cpu_cur_freq_mhz),
-                        AORUS_ORANGE,
+                        uc().orange,
                     );
                     ui.add_space(3.0);
                 }
@@ -1973,7 +1961,7 @@ impl ArgonControlCenterApp {
                             self.telemetry.load_avg.2
                         ))
                         .size(12.0)
-                        .color(TEXT_SECONDARY),
+                        .color(uc().text_secondary),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
@@ -1983,7 +1971,7 @@ impl ArgonControlCenterApp {
                             ))
                             .size(12.0)
                             .strong()
-                            .color(ARGON_CYAN),
+                            .color(uc().cyan),
                         );
                     });
                 });
@@ -1992,8 +1980,8 @@ impl ArgonControlCenterApp {
 
                 // Grouped Quick Control Strip (Segmented Fan Mode + Governor Selector)
                 egui::Frame::new()
-                    .fill(BG_SUBGROUP)
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(5))
                     .inner_margin(egui::Margin::symmetric(10, 6))
                     .show(ui, |ui| {
@@ -2004,17 +1992,12 @@ impl ArgonControlCenterApp {
                                 RichText::new(t.quick_cooling_label)
                                     .size(12.0)
                                     .strong()
-                                    .color(TEXT_SECONDARY),
+                                    .color(uc().text_secondary),
                             );
 
                             let is_auto = self.telemetry.manual_fan_override.is_none();
-                            let r_auto = segmented_pill(
-                                ui,
-                                t.quick_auto,
-                                is_auto,
-                                BTN_CYAN_FILL,
-                                ARGON_CYAN,
-                            );
+                            let r_auto =
+                                segmented_pill(ui, t.quick_auto, is_auto, uc().btn_cyan, uc().cyan);
                             if r_auto.clicked() && !is_auto {
                                 self.telemetry.manual_fan_override = None;
                                 let res = control_argononed_service("restart");
@@ -2027,8 +2010,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 t.quick_silent,
                                 is_off,
-                                BTN_SLATE_FILL,
-                                ARGON_CYAN,
+                                uc().btn_slate,
+                                uc().cyan,
                             );
                             if r_off.clicked() {
                                 self.telemetry.manual_fan_override = Some(0);
@@ -2042,8 +2025,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 t.quick_turbo,
                                 is_max,
-                                BTN_GREEN_FILL,
-                                NEON_GREEN,
+                                uc().btn_green,
+                                uc().green,
                             );
                             if r_max.clicked() {
                                 self.telemetry.manual_fan_override = Some(100);
@@ -2059,7 +2042,7 @@ impl ArgonControlCenterApp {
                                     RichText::new(format!("{} ⓘ", t.quick_gov_label))
                                         .size(12.0)
                                         .strong()
-                                        .color(TEXT_SECONDARY),
+                                        .color(uc().text_secondary),
                                 )
                                 .sense(Sense::hover()),
                             );
@@ -2073,7 +2056,7 @@ impl ArgonControlCenterApp {
                                     RichText::new(selected_gov.to_uppercase())
                                         .size(12.0)
                                         .strong()
-                                        .color(Color32::WHITE),
+                                        .color(uc().text_primary),
                                 )
                                 .show_ui(ui, |ui| {
                                     for g in &gov_options {
@@ -2105,15 +2088,15 @@ impl ArgonControlCenterApp {
 
     fn draw_storage_card(&self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_storage, ARGON_CYAN, |ui| {
+        aorus_card(ui, t.card_storage, uc().cyan, |ui| {
             if self.telemetry.disks.is_empty() {
-                ui.label(RichText::new(t.no_disks).color(TEXT_SECONDARY));
+                ui.label(RichText::new(t.no_disks).color(uc().text_secondary));
             } else {
                 for d in &self.telemetry.disks {
                     let color = if d.usage_pct > 85.0 {
-                        DANGER_RED
+                        uc().red
                     } else {
-                        ARGON_CYAN
+                        uc().cyan
                     };
                     draw_progress_bar_row(
                         ui,
@@ -2144,7 +2127,7 @@ impl ArgonControlCenterApp {
 
     fn draw_specs_card(&self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_specs, AORUS_AMBER, |ui| {
+        aorus_card(ui, t.card_specs, uc().amber, |ui| {
             egui::Grid::new("sys_specs_grid")
                 .num_columns(2)
                 .spacing([16.0, 7.0])
@@ -2207,11 +2190,11 @@ impl ArgonControlCenterApp {
             ui,
             self,
             |app, left_ui| {
-                aorus_card(left_ui, t.card_fan_curve_editor, AORUS_ORANGE, |ui| {
+                aorus_card(left_ui, t.card_fan_curve_editor, uc().orange, |ui| {
                     // Grouped Sensor Selector Strip
                     egui::Frame::new()
-                        .fill(BG_SUBGROUP)
-                        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(8, 5))
                         .show(ui, |ui| {
@@ -2220,14 +2203,14 @@ impl ArgonControlCenterApp {
                                     RichText::new(t.target_sensor)
                                         .size(12.5)
                                         .strong()
-                                        .color(TEXT_SECONDARY),
+                                        .color(uc().text_secondary),
                                 );
                                 let r_cpu = segmented_pill(
                                     ui,
                                     t.cpu_fan_target,
                                     app.fan_target_mode == FanTargetMode::Cpu,
-                                    BTN_ORANGE_FILL,
-                                    AORUS_ORANGE,
+                                    uc().btn_orange,
+                                    uc().orange,
                                 );
                                 if r_cpu.clicked() {
                                     app.fan_target_mode = FanTargetMode::Cpu;
@@ -2243,8 +2226,8 @@ impl ArgonControlCenterApp {
                                     ui,
                                     t.hdd_fan_target,
                                     app.fan_target_mode == FanTargetMode::Hdd,
-                                    BTN_ORANGE_FILL,
-                                    AORUS_ORANGE,
+                                    uc().btn_orange,
+                                    uc().orange,
                                 );
                                 if r_hdd.clicked() {
                                     app.fan_target_mode = FanTargetMode::Hdd;
@@ -2262,7 +2245,7 @@ impl ArgonControlCenterApp {
                     ui.label(
                         RichText::new(t.fan_curve_hint)
                             .size(12.0)
-                            .color(TEXT_SECONDARY),
+                            .color(uc().text_secondary),
                     );
                     ui.add_space(6.0);
 
@@ -2287,7 +2270,7 @@ impl ArgonControlCenterApp {
                         ))
                         .size(13.5)
                         .strong()
-                        .color(ARGON_CYAN),
+                        .color(uc().cyan),
                     );
                 });
             },
@@ -2300,11 +2283,11 @@ impl ArgonControlCenterApp {
     fn draw_fan_controls_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
         let lang = self.lang;
-        aorus_card(ui, t.card_fan_profiles, ARGON_CYAN, |ui| {
+        aorus_card(ui, t.card_fan_profiles, uc().cyan, |ui| {
             // Segmented Operating Mode Switch (Auto Curve vs Fixed Manual Override)
             egui::Frame::new()
-                .fill(BG_SUBGROUP)
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(egui::Margin::symmetric(8, 5))
                 .show(ui, |ui| {
@@ -2314,14 +2297,14 @@ impl ArgonControlCenterApp {
                             RichText::new(t.fan_control_mode_label)
                                 .size(12.5)
                                 .strong()
-                                .color(TEXT_SECONDARY),
+                                .color(uc().text_secondary),
                         );
                         let r_auto = segmented_pill(
                             ui,
                             t.fan_tab_auto_curve,
                             self.fan_control_subtab == FanControlSubTab::AutoCurve,
-                            BTN_CYAN_FILL,
-                            ARGON_CYAN,
+                            uc().btn_cyan,
+                            uc().cyan,
                         );
                         if r_auto.clicked() {
                             self.fan_control_subtab = FanControlSubTab::AutoCurve;
@@ -2337,8 +2320,8 @@ impl ArgonControlCenterApp {
                             ui,
                             t.fan_tab_manual_override,
                             self.fan_control_subtab == FanControlSubTab::ManualOverride,
-                            BTN_ORANGE_FILL,
-                            AORUS_ORANGE,
+                            uc().btn_orange,
+                            uc().orange,
                         );
                         if r_man.clicked() {
                             self.fan_control_subtab = FanControlSubTab::ManualOverride;
@@ -2360,8 +2343,8 @@ impl ArgonControlCenterApp {
                     // Alert Banner if argononed is currently stopped
                     if !self.telemetry.argon_service_active {
                         egui::Frame::new()
-                            .fill(Color32::from_rgb(56, 22, 24))
-                            .stroke(Stroke::new(1.5_f32, DANGER_RED))
+                            .fill(tint(uc().red))
+                            .stroke(Stroke::new(1.5_f32, uc().red))
                             .corner_radius(CornerRadius::same(5))
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
@@ -2370,14 +2353,14 @@ impl ArgonControlCenterApp {
                                     RichText::new(t.smart_fan_daemon_off_warn)
                                         .size(12.5)
                                         .strong()
-                                        .color(AORUS_AMBER),
+                                        .color(uc().amber),
                                 );
                                 ui.add_space(4.0);
                                 let r_quick_start = aorus_action_button(
                                     ui,
                                     t.btn_quick_start_daemon,
-                                    BTN_GREEN_FILL,
-                                    NEON_GREEN,
+                                    uc().btn_green,
+                                    uc().green,
                                 );
                                 if r_quick_start.clicked() {
                                     let res = control_argononed_service("start");
@@ -2407,7 +2390,7 @@ impl ArgonControlCenterApp {
                             .selected_text(
                                 RichText::new(self.selected_fan_preset.label(lang))
                                     .strong()
-                                    .color(Color32::WHITE),
+                                    .color(uc().text_primary),
                             )
                             .show_ui(ui, |ui| {
                                 for preset in [
@@ -2454,8 +2437,8 @@ impl ArgonControlCenterApp {
                     let can_remove = active_curve.len() > 1;
 
                     egui::Frame::new()
-                        .fill(BG_SUBGROUP)
-                        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::same(8))
                         .show(ui, |ui| {
@@ -2473,7 +2456,7 @@ impl ArgonControlCenterApp {
                                                 idx + 1
                                             ))
                                             .strong()
-                                            .color(AORUS_AMBER),
+                                            .color(uc().amber),
                                         );
                                         if ui
                                             .add(
@@ -2532,8 +2515,8 @@ impl ArgonControlCenterApp {
                     let save_resp = aorus_full_cta_button(
                         ui,
                         t.btn_save_fan_curve,
-                        BTN_ORANGE_FILL,
-                        AORUS_ORANGE,
+                        uc().btn_orange,
+                        uc().orange,
                     );
                     if save_resp.clicked() {
                         self.telemetry.manual_fan_override = None;
@@ -2556,14 +2539,14 @@ impl ArgonControlCenterApp {
                     ui.label(
                         RichText::new(t.fan_manual_desc)
                             .size(12.5)
-                            .color(TEXT_SECONDARY),
+                            .color(uc().text_secondary),
                     );
                     ui.add_space(10.0);
 
                     // Segmented Quick Duty Bar
                     egui::Frame::new()
-                        .fill(BG_SUBGROUP)
-                        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
@@ -2573,7 +2556,7 @@ impl ArgonControlCenterApp {
                                     RichText::new(t.manual_presets_label)
                                         .size(12.5)
                                         .strong()
-                                        .color(TEXT_SECONDARY),
+                                        .color(uc().text_secondary),
                                 );
                                 for (lbl, pct) in [
                                     ("0% Off", 0u8),
@@ -2583,14 +2566,8 @@ impl ArgonControlCenterApp {
                                     ("100% Max", 100),
                                 ] {
                                     let is_sel = self.manual_fan_slider == pct;
-                                    if segmented_pill(
-                                        ui,
-                                        lbl,
-                                        is_sel,
-                                        BTN_ORANGE_FILL,
-                                        AORUS_ORANGE,
-                                    )
-                                    .clicked()
+                                    if segmented_pill(ui, lbl, is_sel, uc().btn_orange, uc().orange)
+                                        .clicked()
                                     {
                                         self.manual_fan_slider = pct;
                                     }
@@ -2611,8 +2588,8 @@ impl ArgonControlCenterApp {
                     let apply_resp = aorus_full_cta_button(
                         ui,
                         t.btn_apply_manual_fan,
-                        BTN_GREEN_FILL,
-                        NEON_GREEN,
+                        uc().btn_green,
+                        uc().green,
                     );
                     if apply_resp.clicked() {
                         let spd = self.manual_fan_slider;
@@ -2629,7 +2606,7 @@ impl ArgonControlCenterApp {
 
                     if self.telemetry.manual_fan_override.is_some() {
                         ui.add_space(6.0);
-                        if aorus_full_cta_button(ui, t.btn_return_auto, BTN_CYAN_FILL, ARGON_CYAN)
+                        if aorus_full_cta_button(ui, t.btn_return_auto, uc().btn_cyan, uc().cyan)
                             .clicked()
                         {
                             self.telemetry.manual_fan_override = None;
@@ -2650,10 +2627,10 @@ impl ArgonControlCenterApp {
         let lang = self.lang;
 
         // Grouped 1-Click Performance Profile Bar
-        aorus_card(ui, t.card_oc_presets, AORUS_ORANGE, |ui| {
+        aorus_card(ui, t.card_oc_presets, uc().orange, |ui| {
             egui::Frame::new()
-                .fill(BG_SUBGROUP)
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
@@ -2672,8 +2649,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 &p.label(lang),
                                 is_sel,
-                                BTN_ORANGE_FILL,
-                                AORUS_ORANGE,
+                                uc().btn_orange,
+                                uc().orange,
                             );
                             if resp.clicked() {
                                 self.selected_oc_preset = p;
@@ -2724,12 +2701,12 @@ impl ArgonControlCenterApp {
 
     fn draw_runtime_cpu_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_runtime_cpu, NEON_GREEN, |ui| {
+        aorus_card(ui, t.card_runtime_cpu, uc().green, |ui| {
             adapt_slider_width(ui);
             ui.label(
                 RichText::new(t.runtime_cpu_desc)
                     .size(12.5)
-                    .color(TEXT_SECONDARY),
+                    .color(uc().text_secondary),
             );
             ui.add_space(8.0);
 
@@ -2737,8 +2714,8 @@ impl ArgonControlCenterApp {
             let hw_max = self.telemetry.cpu_hw_max_mhz.max(1800);
 
             egui::Frame::new()
-                .fill(BG_SUBGROUP)
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(egui::Margin::same(10))
                 .show(ui, |ui| {
@@ -2758,7 +2735,7 @@ impl ArgonControlCenterApp {
                                 .selected_text(
                                     RichText::new(self.runtime_governor.to_uppercase())
                                         .strong()
-                                        .color(Color32::WHITE),
+                                        .color(uc().text_primary),
                                 )
                                 .show_ui(ui, |ui| {
                                     for g in &self.telemetry.available_governors {
@@ -2810,7 +2787,7 @@ impl ArgonControlCenterApp {
 
             ui.add_space(10.0);
             let apply_resp =
-                aorus_full_cta_button(ui, t.btn_apply_runtime_cpu, BTN_GREEN_FILL, NEON_GREEN);
+                aorus_full_cta_button(ui, t.btn_apply_runtime_cpu, uc().btn_green, uc().green);
             if apply_resp.clicked() {
                 let res = apply_runtime_cpufreq(
                     &self.runtime_governor,
@@ -2840,25 +2817,25 @@ impl ArgonControlCenterApp {
                 ))
                 .size(12.5)
                 .strong()
-                .color(ARGON_CYAN),
+                .color(uc().cyan),
             );
         });
     }
 
     fn draw_firmware_oc_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_firmware_oc, AORUS_ORANGE, |ui| {
+        aorus_card(ui, t.card_firmware_oc, uc().orange, |ui| {
             adapt_slider_width(ui);
             ui.label(
                 RichText::new(t.firmware_oc_desc)
                     .size(12.5)
-                    .color(TEXT_SECONDARY),
+                    .color(uc().text_secondary),
             );
             ui.add_space(8.0);
 
             egui::Frame::new()
-                .fill(BG_SUBGROUP)
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(egui::Margin::same(10))
                 .show(ui, |ui| {
@@ -2948,7 +2925,7 @@ impl ArgonControlCenterApp {
                                         ))
                                         .size(12.0)
                                         .strong()
-                                        .color(AORUS_AMBER),
+                                        .color(uc().amber),
                                     );
                                 });
                                 ui.end_row();
@@ -2991,13 +2968,13 @@ impl ArgonControlCenterApp {
                     RichText::new(t.oc_warning)
                         .size(12.0)
                         .strong()
-                        .color(DANGER_RED),
+                        .color(uc().red),
                 );
             }
 
             ui.add_space(10.0);
             let save_resp =
-                aorus_full_cta_button(ui, t.btn_save_firmware_oc, BTN_ORANGE_FILL, AORUS_ORANGE);
+                aorus_full_cta_button(ui, t.btn_save_firmware_oc, uc().btn_orange, uc().orange);
             if save_resp.clicked() {
                 let res = save_boot_config(&self.boot_oc);
                 self.log_result("Firmware OC (config.txt)", res);
@@ -3029,16 +3006,16 @@ impl ArgonControlCenterApp {
 
     fn draw_hw_interfaces_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_hw_interfaces, AORUS_ORANGE, |ui| {
+        aorus_card(ui, t.card_hw_interfaces, uc().orange, |ui| {
             ui.label(
                 RichText::new(t.hw_interfaces_desc)
                     .size(12.5)
-                    .color(TEXT_SECONDARY),
+                    .color(uc().text_secondary),
             );
             ui.add_space(6.0);
 
             // Group 1: GPIO Buses
-            section_group_header(ui, t.group_buses, AORUS_AMBER);
+            section_group_header(ui, t.group_buses, uc().amber);
             feature_toggle_row(
                 ui,
                 t.feat_i2c_title,
@@ -3071,7 +3048,7 @@ impl ArgonControlCenterApp {
             ui.add_space(4.0);
 
             // Group 2: Graphics, Audio & Camera/Display
-            section_group_header(ui, t.group_multimedia, ARGON_CYAN);
+            section_group_header(ui, t.group_multimedia, uc().cyan);
             feature_toggle_row(
                 ui,
                 t.feat_vc4_title,
@@ -3104,7 +3081,7 @@ impl ArgonControlCenterApp {
             ui.add_space(4.0);
 
             // Group 3: Argon40 Expansion Modules
-            section_group_header(ui, t.group_argon_addons, NEON_GREEN);
+            section_group_header(ui, t.group_argon_addons, uc().green);
             feature_toggle_row(
                 ui,
                 t.feat_dac_title,
@@ -3122,7 +3099,7 @@ impl ArgonControlCenterApp {
 
             ui.add_space(10.0);
             let save_resp =
-                aorus_full_cta_button(ui, t.btn_apply_hw_features, BTN_ORANGE_FILL, AORUS_ORANGE);
+                aorus_full_cta_button(ui, t.btn_apply_hw_features, uc().btn_orange, uc().orange);
             if save_resp.clicked() {
                 let res = save_boot_config(&self.boot_oc);
                 self.log_result("Hardware Features (config.txt)", res);
@@ -3138,16 +3115,16 @@ impl ArgonControlCenterApp {
 
     fn draw_argon_peripherals_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_argon_peripherals, ARGON_CYAN, |ui| {
+        aorus_card(ui, t.card_argon_peripherals, uc().cyan, |ui| {
             adapt_slider_width(ui);
 
             // Group 1: OLED Configuration
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(t.oled_section).strong().color(AORUS_AMBER));
+                ui.label(RichText::new(t.oled_section).strong().color(uc().amber));
                 let badge = if self.oled_hw_present {
-                    (t.oled_installed_badge, NEON_GREEN)
+                    (t.oled_installed_badge, uc().green)
                 } else {
-                    (t.oled_preview_badge, TEXT_SECONDARY)
+                    (t.oled_preview_badge, uc().text_secondary)
                 };
                 ui.label(
                     RichText::new(format!("({})", badge.0))
@@ -3158,8 +3135,8 @@ impl ArgonControlCenterApp {
             ui.add_space(4.0);
 
             egui::Frame::new()
-                .fill(BG_SUBGROUP)
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(egui::Margin::same(10))
                 .show(ui, |ui| {
@@ -3206,7 +3183,7 @@ impl ArgonControlCenterApp {
                     ui.label(
                         RichText::new(t.oled_pages_label)
                             .size(12.0)
-                            .color(TEXT_SECONDARY),
+                            .color(uc().text_secondary),
                     );
                     ui.horizontal_wrapped(|ui| {
                         for page in [
@@ -3217,8 +3194,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 &page.to_uppercase(),
                                 has,
-                                BTN_CYAN_FILL,
-                                ARGON_CYAN,
+                                uc().btn_cyan,
+                                uc().cyan,
                             )
                             .clicked()
                             {
@@ -3233,8 +3210,7 @@ impl ArgonControlCenterApp {
                     });
 
                     ui.add_space(8.0);
-                    let r_oled =
-                        aorus_action_button(ui, t.btn_save_oled, BTN_CYAN_FILL, ARGON_CYAN);
+                    let r_oled = aorus_action_button(ui, t.btn_save_oled, uc().btn_cyan, uc().cyan);
                     if r_oled.clicked() {
                         let res = save_oled_config(&self.oled_cfg);
                         self.log_result("Save OLED Config", res);
@@ -3250,7 +3226,7 @@ impl ArgonControlCenterApp {
             ui.add_space(12.0);
 
             // Group 2: Argon Firmware & IR Utilities (Structured Action Rows)
-            section_group_header(ui, t.ir_eeprom_section, NEON_GREEN);
+            section_group_header(ui, t.ir_eeprom_section, uc().green);
 
             utility_action_row(
                 ui,
@@ -3289,11 +3265,11 @@ impl ArgonControlCenterApp {
             ui,
             self,
             |app, left_ui| {
-                aorus_card(left_ui, t.card_systemd_service, NEON_GREEN, |ui| {
+                aorus_card(left_ui, t.card_systemd_service, uc().green, |ui| {
                     // 1. Visual Explainer Box: What does argononed do?
                     egui::Frame::new()
-                        .fill(Color32::from_rgb(16, 26, 38))
-                        .stroke(Stroke::new(1.0_f32, ARGON_CYAN.gamma_multiply(0.55)))
+                        .fill(tint(uc().cyan))
+                        .stroke(Stroke::new(1.0_f32, uc().cyan.gamma_multiply(0.55)))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
@@ -3302,7 +3278,7 @@ impl ArgonControlCenterApp {
                                 RichText::new(t.argononed_explainer_title)
                                     .size(12.5)
                                     .strong()
-                                    .color(ARGON_CYAN),
+                                    .color(uc().cyan),
                             );
                             ui.add_space(4.0);
                             for role_txt in [
@@ -3310,7 +3286,9 @@ impl ArgonControlCenterApp {
                                 t.argononed_role_power,
                                 t.argononed_role_oled,
                             ] {
-                                ui.label(RichText::new(role_txt).size(12.0).color(TEXT_PRIMARY));
+                                ui.label(
+                                    RichText::new(role_txt).size(12.0).color(uc().text_primary),
+                                );
                                 ui.add_space(2.0);
                             }
                         });
@@ -3319,8 +3297,8 @@ impl ArgonControlCenterApp {
 
                     // 2. Impact Warning Before Stopping/Disabling
                     egui::Frame::new()
-                        .fill(Color32::from_rgb(44, 30, 14))
-                        .stroke(Stroke::new(1.0_f32, AORUS_AMBER.gamma_multiply(0.65)))
+                        .fill(tint(uc().amber))
+                        .stroke(Stroke::new(1.0_f32, uc().amber.gamma_multiply(0.65)))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(10, 7))
                         .show(ui, |ui| {
@@ -3328,7 +3306,7 @@ impl ArgonControlCenterApp {
                             ui.label(
                                 RichText::new(t.argononed_stop_warning)
                                     .size(11.8)
-                                    .color(AORUS_AMBER),
+                                    .color(uc().amber),
                             );
                         });
 
@@ -3336,8 +3314,8 @@ impl ArgonControlCenterApp {
 
                     // 3. Unified Service Control Strip (Runtime + Boot Startup)
                     egui::Frame::new()
-                        .fill(BG_SUBGROUP)
-                        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
@@ -3345,9 +3323,9 @@ impl ArgonControlCenterApp {
                             ui.horizontal_wrapped(|ui| {
                                 ui.label(RichText::new(t.daemon_state_label).strong());
                                 let col = if app.telemetry.argon_service_active {
-                                    NEON_GREEN
+                                    uc().green
                                 } else {
-                                    DANGER_RED
+                                    uc().red
                                 };
                                 ui.label(
                                     RichText::new(
@@ -3362,9 +3340,9 @@ impl ArgonControlCenterApp {
                                 ui.label(RichText::new(t.daemon_boot_label).strong());
                                 let (boot_col, boot_txt) =
                                     if app.telemetry.argon_service_enabled_boot {
-                                        (NEON_GREEN, t.daemon_boot_enabled)
+                                        (uc().green, t.daemon_boot_enabled)
                                     } else {
-                                        (AORUS_AMBER, t.daemon_boot_disabled)
+                                        (uc().amber, t.daemon_boot_disabled)
                                     };
                                 ui.label(
                                     RichText::new(boot_txt).size(12.0).strong().color(boot_col),
@@ -3376,8 +3354,8 @@ impl ArgonControlCenterApp {
                                 let r_start = aorus_action_button(
                                     ui,
                                     t.btn_start,
-                                    BTN_GREEN_FILL,
-                                    NEON_GREEN,
+                                    uc().btn_green,
+                                    uc().green,
                                 );
                                 if r_start.clicked() {
                                     let res = control_argononed_service("start");
@@ -3394,8 +3372,8 @@ impl ArgonControlCenterApp {
                                 let r_rest = aorus_action_button(
                                     ui,
                                     t.btn_restart,
-                                    BTN_CYAN_FILL,
-                                    ARGON_CYAN,
+                                    uc().btn_cyan,
+                                    uc().cyan,
                                 );
                                 if r_rest.clicked() {
                                     let res = control_argononed_service("restart");
@@ -3460,14 +3438,14 @@ impl ArgonControlCenterApp {
                             RichText::new(t.config_inspector_label)
                                 .size(12.5)
                                 .strong()
-                                .color(TEXT_SECONDARY),
+                                .color(uc().text_secondary),
                         );
                         if segmented_pill(
                             ui,
                             "📄 /etc/argononed.conf",
                             app.config_preview_tab == ConfigPreviewTab::ArgonFanConf,
-                            BTN_ORANGE_FILL,
-                            AORUS_ORANGE,
+                            uc().btn_orange,
+                            uc().orange,
                         )
                         .clicked()
                         {
@@ -3477,8 +3455,8 @@ impl ArgonControlCenterApp {
                             ui,
                             &format!("⚙ {}", get_boot_config_path()),
                             app.config_preview_tab == ConfigPreviewTab::BootConfigTxt,
-                            BTN_ORANGE_FILL,
-                            AORUS_ORANGE,
+                            uc().btn_orange,
+                            uc().orange,
                         )
                         .clicked()
                         {
@@ -3502,12 +3480,12 @@ impl ArgonControlCenterApp {
                 });
             },
             |app, right_ui| {
-                aorus_card(right_ui, t.card_audit_logs, ARGON_CYAN, |ui| {
+                aorus_card(right_ui, t.card_audit_logs, uc().cyan, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(
                             RichText::new(t.audit_logs_desc)
                                 .size(12.5)
-                                .color(TEXT_SECONDARY),
+                                .color(uc().text_secondary),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.small_button(t.btn_clear_logs).clicked() {
@@ -3518,8 +3496,8 @@ impl ArgonControlCenterApp {
                     ui.add_space(6.0);
 
                     egui::Frame::new()
-                        .fill(Color32::from_rgb(9, 13, 21))
-                        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                         .corner_radius(CornerRadius::same(4))
                         .inner_margin(egui::Margin::same(10))
                         .show(ui, |ui| {
@@ -3531,11 +3509,11 @@ impl ArgonControlCenterApp {
                                     ui.set_width(ui.available_width());
                                     for entry in &app.action_logs {
                                         let color = if entry.starts_with("[ERR") {
-                                            DANGER_RED
+                                            uc().red
                                         } else if entry.starts_with("[OK]") {
-                                            NEON_GREEN
+                                            uc().green
                                         } else {
-                                            TEXT_PRIMARY
+                                            uc().text_primary
                                         };
                                         ui.label(
                                             RichText::new(entry)
@@ -3573,12 +3551,12 @@ impl ArgonControlCenterApp {
             ui,
             t.card_gpio_header,
             t.card_gpio_header_tip,
-            AORUS_ORANGE,
+            uc().orange,
             |ui| {
                 // Top Control Strip: Hardware Unlock Badge/Button + Pulse Generator Toggle
                 egui::Frame::new()
-                    .fill(BG_SUBGROUP)
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(5))
                     .inner_margin(egui::Margin::symmetric(8, 5))
                     .show(ui, |ui| {
@@ -3589,14 +3567,14 @@ impl ArgonControlCenterApp {
                                     RichText::new(t.gpio_unlocked_badge)
                                         .size(11.5)
                                         .strong()
-                                        .color(NEON_GREEN),
+                                        .color(uc().green),
                                 );
                             } else {
                                 let r_un = aorus_action_button(
                                     ui,
                                     t.btn_unlock_gpio,
-                                    BTN_ORANGE_FILL,
-                                    AORUS_ORANGE,
+                                    uc().btn_orange,
+                                    uc().orange,
                                 );
                                 if r_un.clicked() {
                                     let res = self.gpio_lab.unlock_hardware_access();
@@ -3632,8 +3610,8 @@ impl ArgonControlCenterApp {
 
                 // Interactive 40-Pin Raspberry Pi Physical Header (20 rows x 2 columns)
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(11, 16, 25))
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(6))
                     .inner_margin(egui::Margin::symmetric(8, 6))
                     .show(ui, |ui| {
@@ -3665,8 +3643,8 @@ impl ArgonControlCenterApp {
                 let sel_bcm = self.gpio_lab.selected_bcm;
                 if let Some(pin) = self.gpio_lab.pins.get(sel_bcm as usize).cloned() {
                     egui::Frame::new()
-                        .fill(BG_SUBGROUP)
-                        .stroke(Stroke::new(1.2_f32, AORUS_ORANGE))
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.2_f32, uc().orange))
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
@@ -3679,15 +3657,15 @@ impl ArgonControlCenterApp {
                                     ))
                                     .size(12.5)
                                     .strong()
-                                    .color(AORUS_AMBER),
+                                    .color(uc().amber),
                                 );
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         let lvl_col = if pin.level_high {
-                                            NEON_GREEN
+                                            uc().green
                                         } else {
-                                            ARGON_CYAN
+                                            uc().cyan
                                         };
                                         let lvl_str = if pin.level_high {
                                             "HIGH (1 / 3.3V)"
@@ -3717,15 +3695,15 @@ impl ArgonControlCenterApp {
                                 if aorus_action_button(
                                     ui,
                                     t.btn_set_high,
-                                    BTN_GREEN_FILL,
-                                    NEON_GREEN,
+                                    uc().btn_green,
+                                    uc().green,
                                 )
                                 .clicked()
                                 {
                                     let res = self.gpio_lab.set_gpio_output(sel_bcm, true);
                                     self.log_result(&format!("GPIO{sel_bcm} -> HIGH"), res);
                                 }
-                                if aorus_action_button(ui, t.btn_set_low, BTN_CYAN_FILL, ARGON_CYAN)
+                                if aorus_action_button(ui, t.btn_set_low, uc().btn_cyan, uc().cyan)
                                     .clicked()
                                 {
                                     let res = self.gpio_lab.set_gpio_output(sel_bcm, false);
@@ -3772,7 +3750,7 @@ impl ArgonControlCenterApp {
                         .monospace()
                         .size(11.5)
                         .strong()
-                        .color(AORUS_AMBER),
+                        .color(uc().amber),
                 );
             }
             HeaderPinKind::Power5v => {
@@ -3782,7 +3760,7 @@ impl ArgonControlCenterApp {
                         .monospace()
                         .size(11.5)
                         .strong()
-                        .color(DANGER_RED),
+                        .color(uc().red),
                 );
             }
             HeaderPinKind::Ground => {
@@ -3791,12 +3769,12 @@ impl ArgonControlCenterApp {
                     RichText::new(txt)
                         .monospace()
                         .size(11.5)
-                        .color(TEXT_SECONDARY),
+                        .color(uc().text_secondary),
                 );
             }
             HeaderPinKind::IdEeprom => {
                 let txt = format!("#{:02}  🏷 {}", def.phys_num, def.label);
-                ui.label(RichText::new(txt).monospace().size(11.5).color(ARGON_CYAN));
+                ui.label(RichText::new(txt).monospace().size(11.5).color(uc().cyan));
             }
             HeaderPinKind::Gpio(bcm) => {
                 let is_sel = self.gpio_lab.selected_bcm == bcm;
@@ -3831,18 +3809,18 @@ impl ArgonControlCenterApp {
                 };
 
                 let fill = if is_sel {
-                    BTN_ORANGE_FILL
+                    uc().btn_orange
                 } else if high {
                     Color32::from_rgb(14, 52, 38)
                 } else {
                     Color32::from_rgb(20, 28, 44)
                 };
                 let border = if is_sel {
-                    AORUS_ORANGE
+                    uc().orange
                 } else if high {
-                    NEON_GREEN
+                    uc().green
                 } else {
-                    BORDER_SUBTLE
+                    uc().border_subtle
                 };
 
                 let btn = egui::Button::new(
@@ -3887,7 +3865,7 @@ impl ArgonControlCenterApp {
             ui,
             t.card_logic_analyzer,
             t.card_logic_analyzer_tip,
-            NEON_GREEN,
+            uc().green,
             |ui| {
                 draw_logic_analyzer_waveforms(ui, &self.gpio_lab);
             },
@@ -3900,12 +3878,12 @@ impl ArgonControlCenterApp {
             ui,
             t.card_arduino_console,
             t.card_arduino_console_tip,
-            ARGON_CYAN,
+            uc().cyan,
             |ui| {
                 // Toolbar Row 1: Mode Switch + Connection / Bus Controls
                 egui::Frame::new()
-                    .fill(BG_SUBGROUP)
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(5))
                     .inner_margin(egui::Margin::symmetric(8, 5))
                     .show(ui, |ui| {
@@ -3915,8 +3893,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 t.mode_uart,
                                 self.gpio_lab.console_mode == ConsoleMode::SerialUart,
-                                BTN_ORANGE_FILL,
-                                AORUS_ORANGE,
+                                uc().btn_orange,
+                                uc().orange,
                             );
                             if r_uart.clicked() {
                                 self.gpio_lab.console_mode = ConsoleMode::SerialUart;
@@ -3932,8 +3910,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 t.mode_gpio_mon,
                                 self.gpio_lab.console_mode == ConsoleMode::GpioEdgeMonitor,
-                                BTN_GREEN_FILL,
-                                NEON_GREEN,
+                                uc().btn_green,
+                                uc().green,
                             );
                             if r_gmon.clicked() {
                                 self.gpio_lab.console_mode = ConsoleMode::GpioEdgeMonitor;
@@ -3949,8 +3927,8 @@ impl ArgonControlCenterApp {
                                 ui,
                                 t.mode_i2c_insp,
                                 self.gpio_lab.console_mode == ConsoleMode::I2cArgonInspector,
-                                BTN_CYAN_FILL,
-                                ARGON_CYAN,
+                                uc().btn_cyan,
+                                uc().cyan,
                             );
                             if r_i2c.clicked() {
                                 self.gpio_lab.console_mode = ConsoleMode::I2cArgonInspector;
@@ -3973,7 +3951,7 @@ impl ArgonControlCenterApp {
                                         .selected_text(
                                             RichText::new(&self.gpio_lab.selected_port)
                                                 .monospace()
-                                                .color(Color32::WHITE),
+                                                .color(uc().text_primary),
                                         )
                                         .show_ui(ui, |ui| {
                                             for p in ports {
@@ -3993,7 +3971,7 @@ impl ArgonControlCenterApp {
                                                 self.gpio_lab.baud_rate
                                             ))
                                             .monospace()
-                                            .color(Color32::WHITE),
+                                            .color(uc().text_primary),
                                         )
                                         .show_ui(ui, |ui| {
                                             for b in [
@@ -4010,9 +3988,9 @@ impl ArgonControlCenterApp {
 
                                     let (conn_lbl, conn_fill, conn_brd) =
                                         if self.gpio_lab.serial_connected {
-                                            (t.btn_disconnect_serial, DANGER_RED, Color32::WHITE)
+                                            (t.btn_disconnect_serial, uc().red, Color32::WHITE)
                                         } else {
-                                            (t.btn_connect_serial, BTN_GREEN_FILL, NEON_GREEN)
+                                            (t.btn_connect_serial, uc().btn_green, uc().green)
                                         };
                                     if aorus_action_button(ui, conn_lbl, conn_fill, conn_brd)
                                         .clicked()
@@ -4024,8 +4002,8 @@ impl ArgonControlCenterApp {
                                     if aorus_action_button(
                                         ui,
                                         t.btn_i2c_scan,
-                                        BTN_CYAN_FILL,
-                                        ARGON_CYAN,
+                                        uc().btn_cyan,
+                                        uc().cyan,
                                     )
                                     .clicked()
                                     {
@@ -4034,8 +4012,8 @@ impl ArgonControlCenterApp {
                                     if aorus_action_button(
                                         ui,
                                         t.btn_mcu_dump,
-                                        BTN_ORANGE_FILL,
-                                        AORUS_ORANGE,
+                                        uc().btn_orange,
+                                        uc().orange,
                                     )
                                     .clicked()
                                     {
@@ -4056,8 +4034,8 @@ impl ArgonControlCenterApp {
                                     ui,
                                     lbl,
                                     self.gpio_lab.data_format == fmt,
-                                    BTN_SLATE_FILL,
-                                    ARGON_CYAN,
+                                    uc().btn_slate,
+                                    uc().cyan,
                                 )
                                 .clicked()
                                 {
@@ -4082,8 +4060,8 @@ impl ArgonControlCenterApp {
 
                 // Monospace Serial / Hardware Terminal Output Box
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(7, 10, 16))
-                    .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                    .fill(uc().bg_subgroup)
+                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                     .corner_radius(CornerRadius::same(4))
                     .inner_margin(egui::Margin::same(8))
                     .show(ui, |ui| {
@@ -4097,11 +4075,11 @@ impl ArgonControlCenterApp {
                                 ui.set_width(ui.available_width());
                                 for entry in &self.gpio_lab.entries {
                                     let (prefix_col, dir_badge) = match entry.direction {
-                                        "TX" => (AORUS_AMBER, "TX >>"),
-                                        "RX" => (NEON_GREEN, "RX <<"),
-                                        "EV" => (ARGON_CYAN, "EV ⚡"),
-                                        "ERR" => (DANGER_RED, "ERR ✖"),
-                                        _ => (TEXT_SECONDARY, "SYS ℹ"),
+                                        "TX" => (uc().amber, "TX >>"),
+                                        "RX" => (uc().green, "RX <<"),
+                                        "EV" => (uc().cyan, "EV ⚡"),
+                                        "ERR" => (uc().red, "ERR ✖"),
+                                        _ => (uc().text_secondary, "SYS ℹ"),
                                     };
                                     let payload = format_console_entry_payload(entry, fmt);
                                     let line = if show_ts {
@@ -4142,7 +4120,7 @@ impl ArgonControlCenterApp {
                                 LineEnding::BothNlCr => "CRLF (\\r\\n)",
                             })
                             .size(11.5)
-                            .color(Color32::WHITE),
+                            .color(uc().text_primary),
                         )
                         .show_ui(ui, |ui| {
                             for le in [
@@ -4155,7 +4133,7 @@ impl ArgonControlCenterApp {
                             }
                         });
 
-                    if aorus_action_button(ui, t.btn_send_tx, BTN_ORANGE_FILL, AORUS_ORANGE)
+                    if aorus_action_button(ui, t.btn_send_tx, uc().btn_orange, uc().orange)
                         .clicked()
                         || enter_pressed
                     {
@@ -4176,16 +4154,16 @@ fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, CornerRadius::same(5), Color32::from_rgb(8, 12, 20));
+    painter.rect_filled(rect, CornerRadius::same(5), uc().bg_subgroup);
     painter.rect_stroke(
         rect,
         CornerRadius::same(5),
-        Stroke::new(1.0_f32, BORDER_SUBTLE),
+        Stroke::new(1.0_f32, uc().border_subtle),
         StrokeKind::Inside,
     );
 
     let label_col_w = 135.0;
-    let colors = [NEON_GREEN, ARGON_CYAN, AORUS_ORANGE, AORUS_AMBER];
+    let colors = [uc().green, uc().cyan, uc().orange, uc().amber];
 
     for (idx, &bcm) in channels.iter().enumerate() {
         let Some(pin) = lab.pins.get(bcm as usize) else {
@@ -4203,7 +4181,7 @@ fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
                     Pos2::new(rect.left() + 4.0, y_top - 2.0),
                     Pos2::new(rect.right() - 4.0, y_top - 2.0),
                 ],
-                Stroke::new(1.0_f32, Color32::from_rgb(22, 30, 46)),
+                Stroke::new(1.0_f32, chart_grid()),
             );
         }
 
@@ -4214,7 +4192,7 @@ fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
             Align2::LEFT_CENTER,
             format!("GPIO{:02} [{}]", pin.bcm, pin.direction.short_label()),
             FontId::new(11.5, FontFamily::Monospace),
-            Color32::WHITE,
+            uc().text_primary,
         );
         painter.text(
             Pos2::new(rect.left() + 8.0, y_top + 24.0),
@@ -4266,20 +4244,24 @@ fn aorus_tooltip(
         ui.horizontal(|ui| {
             let (bar, _) = ui.allocate_exact_size(Vec2::new(3.0, 14.0), Sense::hover());
             ui.painter()
-                .rect_filled(bar, CornerRadius::same(1), AORUS_ORANGE);
-            ui.label(RichText::new(title).size(13.0).strong().color(AORUS_AMBER));
+                .rect_filled(bar, CornerRadius::same(1), uc().orange);
+            ui.label(RichText::new(title).size(13.0).strong().color(uc().amber));
         });
         ui.add_space(3.0);
-        ui.label(RichText::new(description).size(12.5).color(TEXT_PRIMARY));
+        ui.label(
+            RichText::new(description)
+                .size(12.5)
+                .color(uc().text_primary),
+        );
         if let Some(path) = tech_path {
             ui.add_space(4.0);
             egui::Frame::new()
-                .fill(Color32::from_rgb(9, 13, 21))
-                .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+                .fill(uc().bg_subgroup)
+                .stroke(Stroke::new(1.0_f32, uc().border_subtle))
                 .corner_radius(CornerRadius::same(3))
                 .inner_margin(egui::Margin::symmetric(6, 3))
                 .show(ui, |ui| {
-                    ui.label(RichText::new(path).monospace().size(11.0).color(ARGON_CYAN));
+                    ui.label(RichText::new(path).monospace().size(11.0).color(uc().cyan));
                 });
         }
     })
@@ -4291,7 +4273,7 @@ fn label_with_tip(ui: &mut Ui, label: &str, tip: &str, tech_path: Option<&str>) 
             RichText::new(format!("{label} ⓘ"))
                 .size(13.0)
                 .strong()
-                .color(TEXT_PRIMARY),
+                .color(uc().text_primary),
         )
         .sense(Sense::hover()),
     );
@@ -4308,19 +4290,19 @@ fn segmented_pill(
     let btn = egui::Button::new(RichText::new(label).size(12.0).strong().color(if selected {
         Color32::WHITE
     } else {
-        TEXT_SECONDARY
+        uc().text_secondary
     }))
     .fill(if selected {
         active_fill
     } else {
-        Color32::from_rgb(24, 33, 50)
+        uc().btn_slate
     })
     .stroke(Stroke::new(
         if selected { 1.4_f32 } else { 1.0_f32 },
         if selected {
             active_border
         } else {
-            BORDER_SUBTLE
+            uc().border_subtle
         },
     ))
     .corner_radius(CornerRadius::same(4));
@@ -4343,8 +4325,8 @@ fn utility_action_row(
     on_click: impl FnOnce(),
 ) {
     egui::Frame::new()
-        .fill(BG_SUBGROUP)
-        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+        .fill(uc().bg_subgroup)
+        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
         .corner_radius(CornerRadius::same(5))
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
@@ -4357,10 +4339,10 @@ fn utility_action_row(
                             .strong()
                             .color(Color32::WHITE),
                     );
-                    ui.label(RichText::new(desc).size(11.5).color(TEXT_SECONDARY));
+                    ui.label(RichText::new(desc).size(11.5).color(uc().text_secondary));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let resp = aorus_action_button(ui, btn_label, BTN_SLATE_FILL, AORUS_ORANGE);
+                    let resp = aorus_action_button(ui, btn_label, uc().btn_slate, uc().orange);
                     if resp.clicked() {
                         on_click();
                     }
@@ -4424,7 +4406,7 @@ fn aorus_full_cta_button(ui: &mut Ui, label: &str, fill: Color32, border: Color3
 fn high_contrast_code_box(ui: &mut Ui, id: &str, content: &str, max_h: f32) {
     egui::Frame::new()
         .fill(Color32::from_rgb(9, 13, 21))
-        .stroke(Stroke::new(1.0_f32, BORDER_SUBTLE))
+        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
@@ -4447,12 +4429,8 @@ fn aorus_card(ui: &mut Ui, title: &str, accent: Color32, add_contents: impl FnOn
     let card_fill = ui.visuals().faint_bg_color;
     let card_stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     let card_radius = ui.visuals().widgets.noninteractive.corner_radius;
-    let is_kde = card_fill != BG_CARD;
-    let bar_col = if is_kde {
-        Color32::from_rgb(61, 174, 233)
-    } else {
-        accent
-    };
+    let is_kde = card_fill != uc().bg_card;
+    let bar_col = if is_kde { uc().cyan } else { accent };
 
     egui::Frame::new()
         .fill(card_fill)
@@ -4469,7 +4447,7 @@ fn aorus_card(ui: &mut Ui, title: &str, accent: Color32, add_contents: impl FnOn
                     RichText::new(title)
                         .size(13.5)
                         .strong()
-                        .color(Color32::WHITE),
+                        .color(uc().text_primary),
                 );
             });
             if is_kde {
@@ -4493,12 +4471,8 @@ fn aorus_card_with_tip(
     let card_fill = ui.visuals().faint_bg_color;
     let card_stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     let card_radius = ui.visuals().widgets.noninteractive.corner_radius;
-    let is_kde = card_fill != BG_CARD;
-    let bar_col = if is_kde {
-        Color32::from_rgb(61, 174, 233)
-    } else {
-        accent
-    };
+    let is_kde = card_fill != uc().bg_card;
+    let bar_col = if is_kde { uc().cyan } else { accent };
 
     egui::Frame::new()
         .fill(card_fill)
@@ -4516,7 +4490,7 @@ fn aorus_card_with_tip(
                         RichText::new(format!("{title} ⓘ"))
                             .size(13.5)
                             .strong()
-                            .color(Color32::WHITE),
+                            .color(uc().text_primary),
                     )
                     .sense(Sense::hover()),
                 );
@@ -4557,7 +4531,7 @@ fn draw_radial_gauge(
         radius,
         start_angle,
         sweep,
-        Stroke::new(9.0_f32, Color32::from_rgb(38, 50, 74)),
+        Stroke::new(9.0_f32, gauge_track()),
     );
 
     let ticks = 18;
@@ -4567,11 +4541,7 @@ fn draw_radial_gauge(
         let dir = Vec2::new(ang.cos(), ang.sin());
         let p1 = center + dir * (radius + 8.0);
         let p2 = center + dir * (radius + 12.0);
-        let tick_col = if t <= ratio {
-            accent
-        } else {
-            Color32::from_rgb(70, 86, 115)
-        };
+        let tick_col = if t <= ratio { accent } else { gauge_tick() };
         painter.line_segment([p1, p2], Stroke::new(1.5_f32, tick_col));
     }
 
@@ -4591,7 +4561,7 @@ fn draw_radial_gauge(
         Align2::CENTER_CENTER,
         main_value,
         FontId::new(24.0, FontFamily::Proportional),
-        Color32::WHITE,
+        uc().text_primary,
     );
     painter.text(
         center + Vec2::new(0.0, 15.0),
@@ -4606,7 +4576,7 @@ fn draw_radial_gauge(
         Align2::CENTER_CENTER,
         sub_label,
         FontId::new(12.0, FontFamily::Proportional),
-        TEXT_SECONDARY,
+        uc().text_secondary,
     );
 
     resp
@@ -4639,11 +4609,11 @@ fn draw_multi_telemetry_chart(
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(10, 14, 22));
+    painter.rect_filled(rect, CornerRadius::same(4), uc().bg_subgroup);
     painter.rect_stroke(
         rect,
         CornerRadius::same(4),
-        Stroke::new(1.0_f32, BORDER_SUBTLE),
+        Stroke::new(1.0_f32, uc().border_subtle),
         StrokeKind::Inside,
     );
 
@@ -4657,14 +4627,14 @@ fn draw_multi_telemetry_chart(
                 Pos2::new(plot_rect.left(), y),
                 Pos2::new(plot_rect.right(), y),
             ],
-            Stroke::new(1.0_f32, Color32::from_rgb(30, 41, 59)),
+            Stroke::new(1.0_f32, chart_grid()),
         );
         painter.text(
             Pos2::new(plot_rect.left() - 6.0, y),
             Align2::RIGHT_CENTER,
             format!("{}", i * 25),
             FontId::new(11.0, FontFamily::Monospace),
-            TEXT_SECONDARY,
+            uc().text_secondary,
         );
     }
 
@@ -4685,9 +4655,9 @@ fn draw_multi_telemetry_chart(
         painter.add(Shape::line(pts, Stroke::new(2.2_f32, color)));
     };
 
-    plot_series(fan_hist, NEON_GREEN);
-    plot_series(cpu_hist, AORUS_ORANGE);
-    plot_series(temp_hist, ARGON_CYAN);
+    plot_series(fan_hist, uc().green);
+    plot_series(cpu_hist, uc().orange);
+    plot_series(temp_hist, uc().cyan);
 }
 
 fn draw_interactive_fan_curve(
@@ -4700,11 +4670,11 @@ fn draw_interactive_fan_curve(
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(10, 14, 22));
+    painter.rect_filled(rect, CornerRadius::same(6), uc().bg_subgroup);
     painter.rect_stroke(
         rect,
         CornerRadius::same(6),
-        Stroke::new(1.0_f32, BORDER_SUBTLE),
+        Stroke::new(1.0_f32, uc().border_subtle),
         StrokeKind::Inside,
     );
 
@@ -4741,14 +4711,14 @@ fn draw_interactive_fan_curve(
         let p = to_screen(min_t, s as f32);
         painter.line_segment(
             [Pos2::new(plot.left(), p.y), Pos2::new(plot.right(), p.y)],
-            Stroke::new(1.0_f32, Color32::from_rgb(30, 41, 59)),
+            Stroke::new(1.0_f32, chart_grid()),
         );
         painter.text(
             Pos2::new(plot.left() - 6.0, p.y),
             Align2::RIGHT_CENTER,
             format!("{s}%"),
             FontId::new(11.0, FontFamily::Monospace),
-            TEXT_SECONDARY,
+            uc().text_secondary,
         );
     }
 
@@ -4756,14 +4726,14 @@ fn draw_interactive_fan_curve(
         let p = to_screen(t as f32, 0.0);
         painter.line_segment(
             [Pos2::new(p.x, plot.top()), Pos2::new(p.x, plot.bottom())],
-            Stroke::new(1.0_f32, Color32::from_rgb(30, 41, 59)),
+            Stroke::new(1.0_f32, chart_grid()),
         );
         painter.text(
             Pos2::new(p.x, plot.bottom() + 13.0),
             Align2::CENTER_CENTER,
             format!("{t}°C"),
             FontId::new(11.0, FontFamily::Monospace),
-            TEXT_SECONDARY,
+            uc().text_secondary,
         );
     }
 
@@ -4773,7 +4743,7 @@ fn draw_interactive_fan_curve(
             Pos2::new(cur_x, plot.top()),
             Pos2::new(cur_x, plot.bottom()),
         ],
-        Stroke::new(1.5_f32, ARGON_CYAN),
+        Stroke::new(1.5_f32, uc().cyan),
     );
 
     points.sort_by(|a, b| {
@@ -4821,21 +4791,21 @@ fn draw_interactive_fan_curve(
         let last_s = points.last().map(|p| p.speed_pct as f32).unwrap_or(100.0);
         line_pts.push(to_screen(max_t, last_s));
 
-        painter.add(Shape::line(line_pts, Stroke::new(2.5_f32, AORUS_ORANGE)));
+        painter.add(Shape::line(line_pts, Stroke::new(2.5_f32, uc().orange)));
     }
 
     for (i, pt) in points.iter().enumerate() {
         let sp = to_screen(pt.temp_c, pt.speed_pct as f32);
         let is_dragged = *dragging_idx == Some(i);
         let r = if is_dragged { 8.5 } else { 7.0 };
-        painter.circle_filled(sp, r, AORUS_ORANGE);
-        painter.circle_stroke(sp, r, Stroke::new(2.0_f32, Color32::WHITE));
+        painter.circle_filled(sp, r, uc().orange);
+        painter.circle_stroke(sp, r, Stroke::new(2.0_f32, uc().text_primary));
         painter.text(
             sp + Vec2::new(0.0, -14.0),
             Align2::CENTER_CENTER,
             format!("{:.0}°C/{}%", pt.temp_c, pt.speed_pct),
             FontId::new(11.5, FontFamily::Proportional),
-            Color32::WHITE,
+            uc().text_primary,
         );
     }
 }
@@ -4848,20 +4818,25 @@ fn draw_progress_bar_row(
     color: Color32,
 ) {
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(label).size(12.5).strong().color(TEXT_PRIMARY));
+        ui.label(
+            RichText::new(label)
+                .size(12.5)
+                .strong()
+                .color(uc().text_primary),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
                 RichText::new(right_text)
                     .size(12.0)
                     .strong()
-                    .color(TEXT_SECONDARY),
+                    .color(uc().text_secondary),
             );
         });
     });
     let desired = Vec2::new(ui.available_width(), 9.0);
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(12, 17, 27));
+    painter.rect_filled(rect, CornerRadius::same(3), uc().bg_subgroup);
     let fill_w = (rect.width() * fraction.clamp(0.0, 1.0)).max(2.0);
     let fill_rect = Rect::from_min_size(rect.min, Vec2::new(fill_w, rect.height()));
     painter.rect_filled(fill_rect, CornerRadius::same(3), color);
@@ -4871,13 +4846,23 @@ fn legend_badge(ui: &mut Ui, text: &str, color: Color32) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::new(11.0, 11.0), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::same(2), color);
-        ui.label(RichText::new(text).size(12.0).strong().color(TEXT_PRIMARY));
+        ui.label(
+            RichText::new(text)
+                .size(12.0)
+                .strong()
+                .color(uc().text_primary),
+        );
     });
 }
 
 fn spec_row(ui: &mut Ui, key: &str, val: &str) {
-    ui.label(RichText::new(key).size(12.5).color(TEXT_SECONDARY));
-    ui.label(RichText::new(val).size(12.5).strong().color(TEXT_PRIMARY));
+    ui.label(RichText::new(key).size(12.5).color(uc().text_secondary));
+    ui.label(
+        RichText::new(val)
+            .size(12.5)
+            .strong()
+            .color(uc().text_primary),
+    );
     ui.end_row();
 }
 
@@ -4890,13 +4875,17 @@ fn feature_toggle_row(
 ) {
     let resp = egui::Frame::new()
         .fill(if *state {
-            Color32::from_rgb(26, 36, 56)
+            uc().bg_card_hover
         } else {
-            BG_SUBGROUP
+            uc().bg_subgroup
         })
         .stroke(Stroke::new(
             1.1_f32,
-            if *state { AORUS_ORANGE } else { BORDER_SUBTLE },
+            if *state {
+                uc().orange
+            } else {
+                uc().border_subtle
+            },
         ))
         .corner_radius(CornerRadius::same(5))
         .inner_margin(egui::Margin::symmetric(10, 6))
@@ -4909,13 +4898,37 @@ fn feature_toggle_row(
                         RichText::new(format!("{title} ⓘ"))
                             .size(12.5)
                             .strong()
-                            .color(Color32::WHITE),
+                            .color(uc().text_primary),
                     );
-                    ui.label(RichText::new(description).size(11.5).color(TEXT_SECONDARY));
+                    ui.label(
+                        RichText::new(description)
+                            .size(11.5)
+                            .color(uc().text_secondary),
+                    );
                 });
             });
         })
         .response;
     aorus_tooltip(resp, title, description, Some(config_key));
     ui.add_space(3.0);
+}
+
+fn gauge_track() -> Color32 {
+    let c = uc();
+    crate::system_colors::mix(c.bg_card, c.text_primary, 0.16)
+}
+
+fn gauge_tick() -> Color32 {
+    let c = uc();
+    crate::system_colors::mix(c.bg_card, c.text_primary, 0.32)
+}
+
+fn chart_grid() -> Color32 {
+    let c = uc();
+    crate::system_colors::mix(c.bg_subgroup, c.text_primary, 0.12)
+}
+
+/// Subtle accent-tinted surface for banners (works on dark and light palettes).
+fn tint(accent: Color32) -> Color32 {
+    crate::system_colors::mix(uc().bg_card, accent, 0.14)
 }
