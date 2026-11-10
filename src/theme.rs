@@ -13,7 +13,7 @@ use std::f32::consts::PI;
 /// - `KdeBreeze`: Full KDE Plasma System Monitor (`plasma-systemmonitor`) Kirigami sidebar + Donut rings + stacked `history.page` area charts.
 /// - `BreezeClassicLayout`: KDE Breeze Dark color palette (`~/.config/kdeglobals`) & subtle borders applied over the classic v1 layout & radial gauges.
 /// - `AorusGaming`: Saved v1.0 Gigabyte AORUS Gaming theme (top double bar, automotive radial gauges, neon orange/cyan accents).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ThemeModel {
     KdeCompactOverview,
     KdeBreeze,

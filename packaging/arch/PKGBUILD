@@ -1,0 +1,42 @@
+# Maintainer: wendelmax <https://github.com/wendelmax>
+pkgname=argon-control-center
+_reponame=argon-config-rs
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Raspberry Pi & Argon40 hardware control center (fan curve, telemetry, overclocking, GPIO lab)"
+arch=('aarch64' 'armv7h' 'x86_64')
+url="https://github.com/wendelmax/argon-config-rs"
+# TODO: set once the project picks a license
+license=('LicenseRef-Unspecified')
+depends=('gcc-libs' 'glibc' 'libglvnd' 'libxkbcommon' 'wayland' 'libx11' 'systemd')
+makedepends=('cargo')
+optdepends=('polkit: write system files and control argononed from the GUI'
+            'i2c-tools: I2C scan in the GPIO lab'
+            'libgpiod: GPIO tools')
+install=argon-control-center.install
+source=("$_reponame-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$_reponame-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_reponame-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$_reponame-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen
+}
+
+package() {
+  cd "$_reponame-$pkgver"
+  sh packaging/common/install-tree.sh "$pkgdir" target/release/$pkgname
+}

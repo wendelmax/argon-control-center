@@ -1,10 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Argon AORUS Control Center
-GenericName=Configurador de Hardware e Overclocking Argon40
-Comment=Controle de Fan, Indicadores do Sistema, Recursos de Hardware e Overclocking estilo Gigabyte AORUS
+Name=Argon Control Center
+Name[pt_BR]=Argon Control Center
+GenericName=Raspberry Pi & Argon40 Hardware Configurator
+GenericName[pt_BR]=Configurador de Hardware Raspberry Pi e Argon40
+Comment=Fan curve, system monitoring, hardware features and overclocking for Raspberry Pi in Argon40 cases
+Comment[pt_BR]=Curva da ventoinha, monitoramento, recursos de hardware e overclock para Raspberry Pi em gabinetes Argon40
 Exec=argon-control-center
 Icon=utilities-system-monitor
 Terminal=false
-Categories=System;Settings;HardwareSettings;Monitor;
-Keywords=argon;fan;overclock;raspberrypi;aorus;control;
+Categories=System;Monitor;
+Keywords=argon;fan;overclock;raspberrypi;gpio;monitor;
+Keywords[pt_BR]=argon;ventoinha;overclock;raspberrypi;gpio;monitor;

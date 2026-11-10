@@ -379,7 +379,7 @@ pub fn control_argononed_service(action: &str) -> Result<String, String> {
         "start" | "stop" | "restart" | "enable" | "disable" => {
             run_root_script(&format!("systemctl {action} argononed.service"))
         }
-        _ => Err(format!("Ação inválida de serviço: {action}")),
+        _ => Err(format!("Invalid service action: {action}")),
     }
 }
 
@@ -387,7 +387,7 @@ pub fn apply_argon_eeprom_psu_current() -> Result<String, String> {
     if Path::new("/etc/argon/argonone-eepromconfig.py").exists() {
         run_root_script("/usr/bin/python3 /etc/argon/argonone-eepromconfig.py")
     } else {
-        Err("Script /etc/argon/argonone-eepromconfig.py não encontrado.".to_string())
+        Err("Script /etc/argon/argonone-eepromconfig.py not found.".to_string())
     }
 }
 

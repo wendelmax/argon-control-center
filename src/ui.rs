@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 
 // High-Contrast Typography Colors
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActiveTab {
     Dashboard,
     SmartFan,
@@ -72,6 +72,7 @@ pub struct ArgonControlCenterApp {
     palette_rx: Option<std::sync::mpsc::Receiver<KdeBreezePalette>>,
     last_palette_check: Instant,
     pub active_tab: ActiveTab,
+    saved_prefs: crate::settings::Settings,
     pub telemetry: TelemetryState,
     pub last_tick: Instant,
 
@@ -108,9 +109,15 @@ pub struct ArgonControlCenterApp {
 }
 
 impl ArgonControlCenterApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, initial_lang: Language) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, lang_override: Option<Language>) -> Self {
+        let prefs = crate::settings::load();
+        let initial_lang = lang_override.unwrap_or(prefs.language);
         let kde_palette = KdeBreezePalette::load_from_system();
-        configure_kde_breeze_style(&cc.egui_ctx, &kde_palette);
+        if prefs.theme == ThemeModel::AorusGaming {
+            configure_aorus_style(&cc.egui_ctx);
+        } else {
+            configure_kde_breeze_style(&cc.egui_ctx, &kde_palette);
+        }
 
         let cpu_fan_curve = load_fan_curve(CPU_FAN_CONF, FanPreset::BalancedDefault.points());
         let hdd_fan_curve = load_fan_curve(
@@ -156,11 +163,12 @@ impl ArgonControlCenterApp {
 
         Self {
             lang: initial_lang,
-            theme_model: ThemeModel::KdeCompactOverview,
+            theme_model: prefs.theme,
             kde_palette,
             palette_rx: None,
             last_palette_check: Instant::now(),
-            active_tab: ActiveTab::Dashboard,
+            active_tab: prefs.tab,
+            saved_prefs: prefs,
             telemetry,
             last_tick: Instant::now(),
             fan_target_mode: FanTargetMode::Cpu,
@@ -304,6 +312,7 @@ impl eframe::App for ArgonControlCenterApp {
         ctx.request_repaint_after(tick_interval);
 
         self.poll_system_palette(ctx);
+        self.persist_prefs_if_changed();
 
         match self.theme_model {
             ThemeModel::KdeCompactOverview | ThemeModel::KdeBreeze => {
@@ -484,10 +493,25 @@ impl ArgonControlCenterApp {
             }
             aorus_tooltip(
                 resp,
-                "Theme Model / Modelo de Tema",
+                "Theme Model",
                 t.theme_selector_tip,
                 Some(&self.kde_palette.describe()),
             );
+        }
+    }
+
+    /// Saves language / theme / tab to `settings.json` whenever one of them changes.
+    fn persist_prefs_if_changed(&mut self) {
+        let now = crate::settings::Settings {
+            language: self.lang,
+            theme: self.theme_model,
+            tab: self.active_tab,
+        };
+        if now != self.saved_prefs {
+            if let Err(e) = crate::settings::save(&now) {
+                eprintln!("settings: {e}");
+            }
+            self.saved_prefs = now;
         }
     }
 
@@ -1294,7 +1318,7 @@ impl ArgonControlCenterApp {
 
                     // Column 3: Argononed Guardian & Quick Lab Access
                     cols[2].label(
-                        RichText::new("🛡 Guardião argononed & Lab")
+                        RichText::new("🛡 argononed Guardian & Lab")
                             .size(12.5)
                             .strong()
                             .color(pal.positive_green),
@@ -3839,7 +3863,7 @@ impl ArgonControlCenterApp {
                     self.gpio_lab.selected_bcm = bcm;
                 }
                 let tip_desc = format!(
-                    "Função: {}\nDireção: {} | Pull: {}\nNível Lógico: {}\nBordas Capturadas: ↑ {} Subidas | ↓ {} Descidas",
+                    "Function: {}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ↑ {} rising | ↓ {} falling",
                     role,
                     dir_str,
                     pull_str,
@@ -3849,7 +3873,7 @@ impl ArgonControlCenterApp {
                 );
                 aorus_tooltip(
                     resp,
-                    &format!("Pino Físico #{} — GPIO {}", def.phys_num, bcm),
+                    &format!("Physical pin #{} — GPIO {}", def.phys_num, bcm),
                     &tip_desc,
                     Some(&format!("pinctrl get {bcm}")),
                 );

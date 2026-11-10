@@ -490,7 +490,7 @@ impl GpioSerialLabState {
 
         s.push_log(
             "SYS",
-            "Console de Hardware Inicializado. Selecione UART Serial, Monitor de Bordas GPIO ou Inspetor I2C.",
+            "Hardware console ready. Select UART Serial, GPIO Edge Monitor or I2C Inspector.",
             b"",
         );
         s.poll_gpio_states();
@@ -521,17 +521,24 @@ impl GpioSerialLabState {
         });
     }
 
-    /// Unlocks non-root access to `/dev/gpiomem`, `/dev/mem`, `/dev/gpiochip0`, `/dev/i2c-1` and `pinctrl`
-    /// using a one-time Polkit (`pkexec`) call so real-time 1Hz/10Hz polling works seamlessly.
+    /// Grants the current user hardware access the safe way (one Polkit prompt):
+    /// `i2c` / `gpio` / serial groups + udev rules + `i2c-dev` at boot — no setuid binaries and
+    /// no world-writable device nodes. Uses the script shipped by the distro package when
+    /// installed, otherwise an embedded copy fed through stdin. Group membership applies after
+    /// the next login.
     pub fn unlock_hardware_access(&mut self) -> Result<String, String> {
-        let user = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
-        let script = format!(
-            "chmod u+s /usr/bin/pinctrl /usr/bin/gpioget /usr/bin/gpioset /usr/bin/gpioinfo /usr/sbin/i2cdetect /usr/sbin/i2cdump /usr/sbin/i2cget 2>/dev/null || true; \
-             chmod 666 /dev/gpiochip* /dev/i2c-* /dev/ttyS0 2>/dev/null || true; \
-             usermod -aG i2c,dialout,gpio '{user}' 2>/dev/null || true; \
-             echo 'Acesso direto em tempo real a GPIO (pinctrl/gpiochip) e I2C (/dev/i2c-1) liberado!'"
-        );
-        let res = run_root_script(&script)?;
+        let user = current_username().ok_or("Could not determine the current user")?;
+        let user_q = crate::privileged::shell_quote(&user);
+        let packaged = "/usr/lib/argon-control-center/setup-permissions.sh";
+        let res = if std::path::Path::new(packaged).exists() {
+            run_root_script(&format!("/bin/sh {packaged} {user_q}"))?
+        } else {
+            let rules = crate::privileged::shell_quote(SETUP_RULES);
+            crate::privileged::run_root_script_with_stdin(
+                &format!("ARGONCC_RULES={rules} /bin/sh -s -- {user_q}"),
+                Some(SETUP_SCRIPT.as_bytes()),
+            )?
+        };
         self.hw_access_unlocked = true;
         self.push_log("SYS", &res, res.as_bytes());
         self.poll_gpio_states();
@@ -662,7 +669,7 @@ impl GpioSerialLabState {
         }
         let msg = match &res {
             Ok(m) => m.clone(),
-            Err(e) => format!("GPIO{bcm} atualizado localmente ({e})"),
+            Err(e) => format!("GPIO{bcm} updated locally ({e})"),
         };
         self.push_log("TX", &msg, msg.as_bytes());
         res
@@ -698,7 +705,7 @@ impl GpioSerialLabState {
         }
         let msg = match &res {
             Ok(m) => m.clone(),
-            Err(e) => format!("GPIO{bcm} atualizado localmente ({e})"),
+            Err(e) => format!("GPIO{bcm} updated locally ({e})"),
         };
         self.push_log("TX", &msg, msg.as_bytes());
         res
@@ -727,7 +734,7 @@ impl GpioSerialLabState {
                 self.push_log("SYS", &msg, b"");
             }
             Err(err) => {
-                let msg = format!("Falha ao abrir {}: {err}", self.selected_port);
+                let msg = format!("Failed to open {}: {err}", self.selected_port);
                 self.push_log("ERR", &msg, b"");
             }
         }
@@ -770,14 +777,14 @@ impl GpioSerialLabState {
             ConsoleMode::SerialUart => {
                 if let Some(file) = &mut self.serial_file {
                     if let Err(e) = file.write_all(bytes) {
-                        self.push_log("ERR", &format!("Erro TX Serial: {e}"), b"");
+                        self.push_log("ERR", &format!("Serial TX error: {e}"), b"");
                     } else {
                         let _ = file.flush();
                     }
                 } else {
                     self.push_log(
                         "SYS",
-                        "Nota: Porta serial fechada ( loopback local exibido ). Clique em 'Conectar' para transmitir no pino TXD.",
+                        "Note: serial port closed (local loopback shown). Click 'Connect' to transmit on the TXD pin.",
                         b"",
                     );
                 }
@@ -796,7 +803,7 @@ impl GpioSerialLabState {
         }
         match parts[0].to_lowercase().as_str() {
             "help" | "?" => {
-                let help = "Comandos disponíveis: 'scan' (i2cdetect), 'mcu' (dump Argon 0x1a), 'gpio' (ler GPIO 0-27), 'fan <0-100>', 'high <bcm>', 'low <bcm>'";
+                let help = "Available commands: 'scan' (i2cdetect), 'mcu' (dump Argon 0x1a), 'gpio' (read GPIO 0-27), 'fan <0-100>', 'high <bcm>', 'low <bcm>'";
                 self.push_log("SYS", help, help.as_bytes());
             }
             "scan" | "i2cdetect" => {
@@ -846,7 +853,7 @@ impl GpioSerialLabState {
             _ => {
                 self.push_log(
                     "SYS",
-                    "Digite 'help' para ver os comandos de diagnóstico (scan, mcu, gpio, fan <0-100>, high <bcm>, low <bcm>).",
+                    "Type 'help' to list diagnostic commands (scan, mcu, gpio, fan <0-100>, high <bcm>, low <bcm>).",
                     b"",
                 );
             }
@@ -872,7 +879,7 @@ impl GpioSerialLabState {
                 } else {
                     self.push_log(
                         "ERR",
-                        "Sem permissão em /dev/i2c-1. Clique em '🔓 Liberar Acesso Hardware' acima.",
+                        "No permission on /dev/i2c-1. Click '🔓 Unlock Hardware Access' above.",
                         b"",
                     );
                 }
@@ -1021,6 +1028,25 @@ fn open_nonblocking_serial(path: &str, baud: u32) -> Result<fs::File, String> {
         }
     }
     Ok(file)
+}
+
+const SETUP_SCRIPT: &str = include_str!("../packaging/common/setup-permissions.sh");
+const SETUP_RULES: &str = include_str!("../packaging/common/60-argon-control-center.rules");
+
+/// Login name of the real user running the app (from the passwd database, not `$USER`).
+fn current_username() -> Option<String> {
+    // SAFETY: getpwuid returns a pointer into static storage valid until the next call; we copy
+    // the name out immediately and the UI thread is the only caller.
+    unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if pw.is_null() || (*pw).pw_name.is_null() {
+            return None;
+        }
+        std::ffi::CStr::from_ptr((*pw).pw_name)
+            .to_str()
+            .ok()
+            .map(str::to_owned)
+    }
 }
 
 #[cfg(test)]

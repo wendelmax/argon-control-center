@@ -1,0 +1,14 @@
+post_install() {
+  systemd-sysusers argon-control-center.conf 2>/dev/null || true
+  /usr/lib/argon-control-center/setup-permissions.sh "${SUDO_USER:-}" || true
+  echo ">>> To grant your user hardware access (i2c, gpio, uucp):"
+  echo ">>>   sudo /usr/lib/argon-control-center/setup-permissions.sh \$USER   (then log in again)"
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  udevadm control --reload-rules 2>/dev/null || true
+}

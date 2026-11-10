@@ -92,6 +92,7 @@ pub struct TelemetryState {
     prev_cpu_samples: HashMap<String, CpuStatSample>,
     prev_net_bytes: Option<(u64, u64, Instant)>,
     pub last_slow_refresh: Option<Instant>,
+    slow_rx: PendingSlow,
 }
 
 impl Default for TelemetryState {
@@ -166,6 +167,7 @@ impl TelemetryState {
             prev_cpu_samples: read_proc_stat(),
             prev_net_bytes: None,
             last_slow_refresh: None,
+            slow_rx: PendingSlow(None),
         };
         s.refresh(&[]);
         s
@@ -304,21 +306,43 @@ impl TelemetryState {
         push_history(&mut self.net_rx_history, self.net_rx_kbps);
         push_history(&mut self.net_tx_history, self.net_tx_kbps);
 
-        // 9. Slow refresh (every 5 seconds: disks, RAID, service status, IP)
-        let should_slow_refresh = match self.last_slow_refresh {
-            None => true,
-            Some(t) => t.elapsed().as_secs() >= 5,
-        };
-        if should_slow_refresh {
-            self.disks = read_disks();
-            self.raid_arrays = read_raid_arrays();
-            let (active, status) = crate::argon::get_argononed_service_status();
-            self.argon_service_active = active;
-            self.argon_service_status = status;
-            self.argon_service_enabled_boot = crate::argon::get_argononed_boot_enabled();
-            self.ip_address = detect_local_ip();
-            self.last_slow_refresh = Some(Instant::now());
+        // 9. Slow refresh (every 5 seconds: disks, RAID, service status, IP).
+        // `df` and `systemctl` are spawned on a worker thread so the UI never stalls on them;
+        // the very first sample is taken synchronously so the dashboard starts populated.
+        if let Some(rx) = &self.slow_rx.0 {
+            match rx.try_recv() {
+                Ok(data) => {
+                    self.apply_slow(data);
+                    self.slow_rx.0 = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.slow_rx.0 = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
         }
+        match self.last_slow_refresh {
+            None => {
+                self.apply_slow(SlowData::collect());
+                self.last_slow_refresh = Some(Instant::now());
+            }
+            Some(t) if t.elapsed().as_secs() >= 5 && self.slow_rx.0.is_none() => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send(SlowData::collect());
+                });
+                self.slow_rx.0 = Some(rx);
+                self.last_slow_refresh = Some(Instant::now());
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_slow(&mut self, d: SlowData) {
+        self.disks = d.disks;
+        self.raid_arrays = d.raid_arrays;
+        self.argon_service_active = d.service_active;
+        self.argon_service_status = d.service_status;
+        self.argon_service_enabled_boot = d.service_enabled_boot;
+        self.ip_address = d.ip_address;
     }
 
     pub fn format_uptime(&self) -> String {
@@ -493,4 +517,48 @@ fn read_raid_arrays() -> Vec<RaidArrayInfo> {
         }
     }
     arrays
+}
+
+/// Values that need external commands; collected off the UI thread.
+struct SlowData {
+    disks: Vec<DiskUsageInfo>,
+    raid_arrays: Vec<RaidArrayInfo>,
+    service_active: bool,
+    service_status: String,
+    service_enabled_boot: bool,
+    ip_address: String,
+}
+
+impl SlowData {
+    fn collect() -> Self {
+        let (service_active, service_status) = crate::argon::get_argononed_service_status();
+        SlowData {
+            disks: read_disks(),
+            raid_arrays: read_raid_arrays(),
+            service_active,
+            service_status,
+            service_enabled_boot: crate::argon::get_argononed_boot_enabled(),
+            ip_address: detect_local_ip(),
+        }
+    }
+}
+
+/// In-flight slow sample. A cloned `TelemetryState` simply starts without one.
+#[derive(Default)]
+struct PendingSlow(Option<std::sync::mpsc::Receiver<SlowData>>);
+
+impl Clone for PendingSlow {
+    fn clone(&self) -> Self {
+        PendingSlow(None)
+    }
+}
+
+impl std::fmt::Debug for PendingSlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "PendingSlow(pending)"
+        } else {
+            "PendingSlow(idle)"
+        })
+    }
 }
