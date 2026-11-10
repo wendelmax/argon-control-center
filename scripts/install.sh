@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ "${1:-}" == "--uninstall" ]]; then
     rm -f "$BIN_DIR/$BIN_NAME" "$APP_DIR/$BIN_NAME.desktop"
     command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
-    echo "Removido / Removed: $BIN_DIR/$BIN_NAME, $APP_DIR/$BIN_NAME.desktop"
+    echo "Removed: $BIN_DIR/$BIN_NAME, $APP_DIR/$BIN_NAME.desktop"
     exit 0
 fi
 
@@ -33,9 +33,9 @@ sed "s|^Exec=.*|Exec=$BIN_DIR/$BIN_NAME|" "$BIN_NAME.desktop" > "$APP_DIR/$BIN_N
 chmod 644 "$APP_DIR/$BIN_NAME.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
 
-echo "Instalado / Installed: $BIN_DIR/$BIN_NAME"
-echo "Atalho / Menu entry:   $APP_DIR/$BIN_NAME.desktop"
+echo "Installed: $BIN_DIR/$BIN_NAME"
+echo "Menu entry: $APP_DIR/$BIN_NAME.desktop"
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
-    *) echo "Aviso: $BIN_DIR não está no PATH / is not in PATH" ;;
+    *) echo "Warning: $BIN_DIR is not in PATH" ;;
 esac

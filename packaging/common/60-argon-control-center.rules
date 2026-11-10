@@ -1,0 +1,11 @@
+# Argon Control Center: hardware access for members of the i2c / gpio groups.
+# No setuid binaries and no world-writable devices are needed.
+
+# I2C buses (/dev/i2c-*): Argon fan MCU 0x1a, OLED 0x3c, RTC 0x51
+SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0660"
+
+# GPIO character devices (/dev/gpiochip*) used by libgpiod tools
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+
+# Raspberry Pi GPIO register window used by pinctrl (/dev/gpiomem, /dev/gpiomem0..4 on Pi 5)
+KERNEL=="gpiomem*", GROUP="gpio", MODE="0660"

@@ -291,7 +291,7 @@ impl BoardInfo {
         let p = |x: Probe| match x {
             Probe::Present => "✔",
             Probe::Absent => "✘",
-            Probe::NoAccess => "? (sem acesso / no access /dev/i2c-1)",
+            Probe::NoAccess => "? (no access to /dev/i2c-1)",
         };
         format!(
             "{}\nRevision: {}\nSoC: {}  RAM: {}\nCase: {}\nArgon scripts: {}\nI2C 0x1a MCU: {}\nI2C 0x3c OLED: {}\nI2C 0x51 RTC: {}\nI2C 0x4d DAC: {}\nOC: stock {} MHz · max {} MHz",

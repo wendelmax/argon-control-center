@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+    command -v systemd-sysusers >/dev/null 2>&1 && systemd-sysusers argon-control-center.conf || true
+    # Groups, i2c-dev, udev reload; also grants access to the admin who ran apt via sudo/pkexec.
+    TARGET_USER="${SUDO_USER:-}"
+    if [ -z "$TARGET_USER" ] && [ -n "${PKEXEC_UID:-}" ]; then
+        TARGET_USER="$(getent passwd "$PKEXEC_UID" | cut -d: -f1)"
+    fi
+    /usr/lib/argon-control-center/setup-permissions.sh "$TARGET_USER" || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q || true
+fi
+exit 0

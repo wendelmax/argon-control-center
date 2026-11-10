@@ -4,6 +4,7 @@ pub mod gpio_lab;
 pub mod i18n;
 pub mod overclock;
 pub mod privileged;
+pub mod settings;
 pub mod system_colors;
 pub mod telemetry;
 pub mod theme;
@@ -18,10 +19,17 @@ use eframe::egui;
 
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let initial_lang = if args.iter().any(|a| a == "--en" || a == "--lang=en") {
-        Language::EnUs
+    // English is the default; PT-BR is available from the UI or via --pt.
+    // A command-line flag overrides the language saved in settings.json.
+    let lang_override = if args
+        .iter()
+        .any(|a| a == "--pt" || a == "--lang=pt" || a == "--lang=pt-br")
+    {
+        Some(Language::PtBr)
+    } else if args.iter().any(|a| a == "--en" || a == "--lang=en") {
+        Some(Language::EnUs)
     } else {
-        Language::PtBr
+        None
     };
 
     if args.iter().any(|a| a == "--status" || a == "-s") {
@@ -30,9 +38,9 @@ fn main() -> eframe::Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(250));
         tel.refresh(&curve);
         let oc = load_boot_config();
-        println!("=== ARGON AORUS CONTROL CENTER — TELEMETRY / TELEMETRIA ===");
+        println!("=== ARGON CONTROL CENTER — TELEMETRY ===");
         let board = crate::board::current();
-        println!("Board / Placa : {}", tel.board_model);
+        println!("Board         : {}", tel.board_model);
         println!("Detected      : {}", board.summary());
         println!("OS / Kernel   : {} ({})", tel.os_name, tel.kernel_version);
         println!(
@@ -69,6 +77,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "argon-control-center",
         native_options,
-        Box::new(move |cc| Ok(Box::new(ArgonControlCenterApp::new(cc, initial_lang)))),
+        Box::new(move |cc| Ok(Box::new(ArgonControlCenterApp::new(cc, lang_override)))),
     )
 }

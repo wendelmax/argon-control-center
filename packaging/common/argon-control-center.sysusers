@@ -1,0 +1,3 @@
+# Groups granting hardware access (see 60-argon-control-center.rules)
+g i2c - -
+g gpio - -
