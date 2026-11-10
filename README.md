@@ -189,6 +189,13 @@ cargo test print_detected -- --ignored --nocapture     # detected desktop colors
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, tests and a release build on x86_64 and ARM64. `.github/workflows/package.yml` builds and smoke-tests the `.deb`, `.rpm` and Arch packages, and attaches them to the GitHub Release on `v*` tags.
 
+### Releasing
+
+1. Move the `[Unreleased]` entries in `CHANGELOG.md` to a new `## [x.y.z] - YYYY-MM-DD` section and bump `version` in `Cargo.toml` (plus `Version` in the RPM spec and `pkgver` in the `PKGBUILD`).
+2. Merge to `main`, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+The `Packages` workflow then builds and tests every package, checks that the tag matches `Cargo.toml`, writes `SHA256SUMS` and publishes the GitHub Release "Argon Control Center X.Y.Z". The release notes come from the matching `CHANGELOG.md` section (or from Conventional Commits since the previous tag), followed by installation and verification instructions. Tags with a suffix (`v1.2.0-rc.1`) are published as pre-releases. Preview the notes locally with `scripts/release-notes.sh vX.Y.Z`.
+
 ### Layout
 
 | Path | Purpose |
@@ -207,6 +214,8 @@ CI (`.github/workflows/ci.yml`) runs fmt, clippy, tests and a release build on x
 | `src/privileged.rs` | Polkit elevation, atomic writes with backup |
 | `packaging/` | `.deb`, `.rpm`, Arch `PKGBUILD`, udev rules, permission setup |
 | `scripts/install.sh` | per-user install from source |
+| `scripts/release-notes.sh` | GitHub release notes for a tag |
+| `CHANGELOG.md` | release history (Keep a Changelog) |
 
 ---
 
