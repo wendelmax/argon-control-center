@@ -1,3 +1,4 @@
+use crate::board::OcProfile;
 use crate::i18n::Language;
 use crate::privileged::{run_root_script, write_privileged_file};
 use serde::{Deserialize, Serialize};
@@ -16,24 +17,68 @@ pub fn get_boot_config_path() -> &'static str {
 pub enum OcPreset {
     EcoPowerSave,
     StockBoost,
-    OcGaming2000,
-    OcExtreme2147,
+    OcGaming,
+    OcExtreme,
     Custom,
 }
 
 impl OcPreset {
-    pub fn label(&self, lang: Language) -> &'static str {
-        match (self, lang) {
-            (OcPreset::EcoPowerSave, Language::PtBr) => "ECO MODE (1500 MHz / Baixo Consumo)",
-            (OcPreset::EcoPowerSave, Language::EnUs) => "ECO MODE (1500 MHz / Power Save)",
-            (OcPreset::StockBoost, Language::PtBr) => "STOCK BOOST (1800 MHz Padrão RPi4)",
-            (OcPreset::StockBoost, Language::EnUs) => "STOCK BOOST (1800 MHz Default RPi4)",
-            (OcPreset::OcGaming2000, Language::PtBr) => "AORUS OC GAMING (2000 MHz / 650 GPU)",
-            (OcPreset::OcGaming2000, Language::EnUs) => "AORUS OC GAMING (2000 MHz / 650 GPU)",
-            (OcPreset::OcExtreme2147, Language::PtBr) => "AORUS EXTREME (2147 MHz / 750 GPU)",
-            (OcPreset::OcExtreme2147, Language::EnUs) => "AORUS EXTREME (2147 MHz / 750 GPU)",
-            (OcPreset::Custom, Language::PtBr) => "CUSTOM TUNING (Ajuste Manual)",
-            (OcPreset::Custom, Language::EnUs) => "CUSTOM TUNING (Manual Setup)",
+    /// Label with the frequencies of the detected board's SoC profile.
+    pub fn label(&self, lang: Language) -> String {
+        self.label_for(lang, &crate::board::current().oc)
+    }
+
+    pub fn label_for(&self, lang: Language, p: &OcProfile) -> String {
+        let pt = lang == Language::PtBr;
+        match self {
+            OcPreset::EcoPowerSave => format!(
+                "ECO MODE ({} MHz / {})",
+                p.eco_mhz,
+                if pt { "Baixo Consumo" } else { "Power Save" }
+            ),
+            OcPreset::StockBoost => format!(
+                "STOCK ({} MHz {})",
+                p.stock_mhz,
+                if pt {
+                    "Padrão de Fábrica"
+                } else {
+                    "Factory Default"
+                }
+            ),
+            OcPreset::OcGaming => {
+                format!("AORUS OC GAMING ({} MHz / {} GPU)", p.oc_mhz, p.gpu_oc_mhz)
+            }
+            OcPreset::OcExtreme => format!(
+                "AORUS EXTREME ({} MHz / {} GPU)",
+                p.extreme_mhz, p.gpu_extreme_mhz
+            ),
+            OcPreset::Custom => {
+                if pt {
+                    "CUSTOM TUNING (Ajuste Manual)".to_string()
+                } else {
+                    "CUSTOM TUNING (Manual Setup)".to_string()
+                }
+            }
+        }
+    }
+
+    /// Compact pill label, e.g. `🚀 2.0G`.
+    pub fn short_label(&self) -> String {
+        let p = &crate::board::current().oc;
+        let ghz = |mhz: u32| {
+            let g = mhz as f32 / 1000.0;
+            if (g * 10.0).fract() == 0.0 {
+                format!("{g:.1}G")
+            } else {
+                format!("{g:.2}G")
+            }
+        };
+        match self {
+            OcPreset::EcoPowerSave => format!("🌱 {}", ghz(p.eco_mhz)),
+            OcPreset::StockBoost => format!("⚖ {}", ghz(p.stock_mhz)),
+            OcPreset::OcGaming => format!("🚀 {}", ghz(p.oc_mhz)),
+            OcPreset::OcExtreme => format!("🔥 {}", ghz(p.extreme_mhz)),
+            OcPreset::Custom => "🎛 Custom".to_string(),
         }
     }
 }
@@ -43,6 +88,8 @@ pub struct BootOcConfig {
     pub arm_freq_mhz: u32,
     pub gpu_freq_mhz: u32,
     pub over_voltage: i32,
+    /// Pi 5 (BCM2712) adaptive voltage offset in µV (`over_voltage_delta`).
+    pub over_voltage_delta_uv: i32,
     pub arm_boost: bool,
     pub force_turbo: bool,
     pub temp_limit_c: u32,
@@ -62,10 +109,17 @@ pub struct BootOcConfig {
 
 impl Default for BootOcConfig {
     fn default() -> Self {
+        Self::default_for(&crate::board::current().oc)
+    }
+}
+
+impl BootOcConfig {
+    pub fn default_for(p: &OcProfile) -> Self {
         Self {
-            arm_freq_mhz: 1800,
-            gpu_freq_mhz: 500,
+            arm_freq_mhz: p.stock_mhz,
+            gpu_freq_mhz: p.gpu_stock_mhz,
             over_voltage: 0,
+            over_voltage_delta_uv: 0,
             arm_boost: true,
             force_turbo: false,
             temp_limit_c: 85,
@@ -85,41 +139,31 @@ impl Default for BootOcConfig {
 
 impl BootOcConfig {
     pub fn apply_preset(&mut self, preset: OcPreset) {
-        match preset {
-            OcPreset::EcoPowerSave => {
-                self.arm_freq_mhz = 1500;
-                self.gpu_freq_mhz = 500;
-                self.over_voltage = 0;
-                self.arm_boost = false;
-                self.force_turbo = false;
-                self.temp_limit_c = 80;
-            }
-            OcPreset::StockBoost => {
-                self.arm_freq_mhz = 1800;
-                self.gpu_freq_mhz = 500;
-                self.over_voltage = 0;
-                self.arm_boost = true;
-                self.force_turbo = false;
-                self.temp_limit_c = 85;
-            }
-            OcPreset::OcGaming2000 => {
-                self.arm_freq_mhz = 2000;
-                self.gpu_freq_mhz = 650;
-                self.over_voltage = 4;
-                self.arm_boost = true;
-                self.force_turbo = false;
-                self.temp_limit_c = 85;
-            }
-            OcPreset::OcExtreme2147 => {
-                self.arm_freq_mhz = 2147;
-                self.gpu_freq_mhz = 750;
-                self.over_voltage = 6;
-                self.arm_boost = true;
-                self.force_turbo = false;
-                self.temp_limit_c = 85;
-            }
-            OcPreset::Custom => {}
-        }
+        self.apply_preset_for(preset, &crate::board::current().oc);
+    }
+
+    pub fn apply_preset_for(&mut self, preset: OcPreset, p: &OcProfile) {
+        let (arm, gpu, ov, ov_delta, boost, temp) = match preset {
+            OcPreset::EcoPowerSave => (p.eco_mhz, p.gpu_stock_mhz, 0, 0, false, 80),
+            OcPreset::StockBoost => (p.stock_mhz, p.gpu_stock_mhz, 0, 0, true, 85),
+            OcPreset::OcGaming => (p.oc_mhz, p.gpu_oc_mhz, p.ov_oc, p.ov_delta_oc_uv, true, 85),
+            OcPreset::OcExtreme => (
+                p.extreme_mhz,
+                p.gpu_extreme_mhz,
+                p.ov_extreme,
+                p.ov_delta_extreme_uv,
+                true,
+                85,
+            ),
+            OcPreset::Custom => return,
+        };
+        self.arm_freq_mhz = arm;
+        self.gpu_freq_mhz = gpu;
+        self.over_voltage = ov;
+        self.over_voltage_delta_uv = ov_delta;
+        self.arm_boost = boost;
+        self.force_turbo = false;
+        self.temp_limit_c = temp;
     }
 
     /// Approximate core voltage in Volts for display (`0.88V` base + `0.025V * over_voltage`).
@@ -129,6 +173,10 @@ impl BootOcConfig {
 }
 
 pub fn parse_boot_config_str(content: &str) -> BootOcConfig {
+    parse_boot_config_str_for(content, &crate::board::current().oc)
+}
+
+pub fn parse_boot_config_str_for(content: &str, profile: &OcProfile) -> BootOcConfig {
     let mut cfg = BootOcConfig {
         i2c_arm: false,
         spi: false,
@@ -141,7 +189,7 @@ pub fn parse_boot_config_str(content: &str) -> BootOcConfig {
         argon_blstr_dac: false,
         argon_ir_receiver: false,
         arm_boost: false,
-        ..BootOcConfig::default()
+        ..BootOcConfig::default_for(profile)
     };
 
     for raw_line in content.lines() {
@@ -184,6 +232,11 @@ pub fn parse_boot_config_str(content: &str) -> BootOcConfig {
                         cfg.over_voltage = n;
                     }
                 }
+                "over_voltage_delta" => {
+                    if let Ok(n) = val.parse::<i32>() {
+                        cfg.over_voltage_delta_uv = n;
+                    }
+                }
                 "arm_boost" => {
                     cfg.arm_boost = val == "1" || val.eq_ignore_ascii_case("on");
                 }
@@ -209,7 +262,8 @@ pub fn parse_boot_config_str(content: &str) -> BootOcConfig {
         }
     }
 
-    if cfg.arm_boost && cfg.arm_freq_mhz == 1500 {
+    // Pi 4: firmware default without arm_freq is 1500 MHz, arm_boost raises it to 1800 MHz.
+    if profile.stock_mhz == 1800 && cfg.arm_boost && cfg.arm_freq_mhz == 1500 {
         cfg.arm_freq_mhz = 1800;
     }
 
@@ -226,10 +280,19 @@ pub fn load_boot_config() -> BootOcConfig {
 
 /// Updates `config.txt` preserving user comments & sections while updating Hardware Toggles and the AORUS Overclocking block.
 pub fn update_boot_config_str(original: &str, cfg: &BootOcConfig) -> String {
+    update_boot_config_str_for(original, cfg, &crate::board::current().oc)
+}
+
+pub fn update_boot_config_str_for(
+    original: &str,
+    cfg: &BootOcConfig,
+    profile: &OcProfile,
+) -> String {
     let managed_oc_keys = [
         "arm_freq",
         "gpu_freq",
         "over_voltage",
+        "over_voltage_delta",
         "force_turbo",
         "temp_limit",
     ];
@@ -405,14 +468,17 @@ pub fn update_boot_config_str(original: &str, cfg: &BootOcConfig) -> String {
     }
 
     // Overclocking parameters
-    if cfg.arm_freq_mhz != 1800 || !cfg.arm_boost {
+    if cfg.arm_freq_mhz != profile.stock_mhz || !cfg.arm_boost {
         out_lines.push(format!("arm_freq={}", cfg.arm_freq_mhz));
     }
-    if cfg.gpu_freq_mhz != 500 {
+    if cfg.gpu_freq_mhz != profile.gpu_stock_mhz {
         out_lines.push(format!("gpu_freq={}", cfg.gpu_freq_mhz));
     }
     if cfg.over_voltage != 0 {
         out_lines.push(format!("over_voltage={}", cfg.over_voltage));
+    }
+    if cfg.over_voltage_delta_uv != 0 {
+        out_lines.push(format!("over_voltage_delta={}", cfg.over_voltage_delta_uv));
     }
     if cfg.force_turbo {
         out_lines.push("force_turbo=1".to_string());
@@ -464,26 +530,44 @@ pub fn apply_runtime_cpufreq(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::Soc;
 
     #[test]
     fn test_boot_config_roundtrip() {
+        let pi4 = OcProfile::for_soc(Soc::Bcm2711);
         let orig = "dtparam=i2c_arm=on\n#dtparam=spi=on\ndtparam=audio=on\ndtoverlay=vc4-kms-v3d\narm_boost=1\n[all]\nenable_uart=1\n";
-        let mut cfg = parse_boot_config_str(orig);
+        let mut cfg = parse_boot_config_str_for(orig, &pi4);
         assert!(cfg.i2c_arm);
         assert!(!cfg.spi);
         assert!(cfg.arm_boost);
         assert_eq!(cfg.arm_freq_mhz, 1800);
 
-        cfg.apply_preset(OcPreset::OcGaming2000);
+        cfg.apply_preset_for(OcPreset::OcGaming, &pi4);
         cfg.spi = true;
         cfg.argon_blstr_dac = true;
 
-        let new_str = update_boot_config_str(orig, &cfg);
-        let reparsed = parse_boot_config_str(&new_str);
+        let new_str = update_boot_config_str_for(orig, &cfg, &pi4);
+        let reparsed = parse_boot_config_str_for(&new_str, &pi4);
         assert_eq!(reparsed.arm_freq_mhz, 2000);
         assert_eq!(reparsed.gpu_freq_mhz, 650);
         assert_eq!(reparsed.over_voltage, 4);
         assert!(reparsed.spi);
         assert!(reparsed.argon_blstr_dac);
+    }
+
+    #[test]
+    fn test_pi5_profile_roundtrip() {
+        let pi5 = OcProfile::for_soc(Soc::Bcm2712);
+        let orig = "dtparam=i2c_arm=on\n";
+        let mut cfg = parse_boot_config_str_for(orig, &pi5);
+        assert_eq!(cfg.arm_freq_mhz, 2400);
+        cfg.apply_preset_for(OcPreset::OcExtreme, &pi5);
+        let new_str = update_boot_config_str_for(orig, &cfg, &pi5);
+        assert!(new_str.contains("arm_freq=3000"));
+        assert!(new_str.contains("over_voltage_delta=100000"));
+        assert!(!new_str.contains("over_voltage=")); // Pi 5 keeps adaptive voltage
+        let reparsed = parse_boot_config_str_for(&new_str, &pi5);
+        assert_eq!(reparsed.over_voltage_delta_uv, 100_000);
+        assert_eq!(reparsed.gpu_freq_mhz, 1000);
     }
 }
