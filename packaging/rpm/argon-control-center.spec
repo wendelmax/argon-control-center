@@ -2,8 +2,7 @@ Name:           argon-control-center
 Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Raspberry Pi & Argon40 hardware control center
-# TODO: set once the project picks a license
-License:        LicenseRef-Unspecified
+License:        MIT
 URL:            https://github.com/wendelmax/argon-config-rs
 Source0:        %{url}/archive/v%{version}/argon-config-rs-%{version}.tar.gz
 Source1:        argon-control-center.sysusers
@@ -54,6 +53,7 @@ sh packaging/common/install-tree.sh %{buildroot} target/release/%{name}
 udevadm control --reload-rules >/dev/null 2>&1 || :
 
 %files
+%license LICENSE
 %doc README.md
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop

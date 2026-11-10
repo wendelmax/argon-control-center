@@ -6,8 +6,7 @@ pkgrel=1
 pkgdesc="Raspberry Pi & Argon40 hardware control center (fan curve, telemetry, overclocking, GPIO lab)"
 arch=('aarch64' 'armv7h' 'x86_64')
 url="https://github.com/wendelmax/argon-config-rs"
-# TODO: set once the project picks a license
-license=('LicenseRef-Unspecified')
+license=('MIT')
 depends=('gcc-libs' 'glibc' 'libglvnd' 'libxkbcommon' 'wayland' 'libx11' 'systemd')
 makedepends=('cargo')
 optdepends=('polkit: write system files and control argononed from the GUI'
@@ -39,4 +38,5 @@ check() {
 package() {
   cd "$_reponame-$pkgver"
   sh packaging/common/install-tree.sh "$pkgdir" target/release/$pkgname
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

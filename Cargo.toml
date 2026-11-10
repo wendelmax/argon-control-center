@@ -2,8 +2,11 @@
 name = "argon-control-center"
 version = "0.1.0"
 edition = "2021"
-description = "Gigabyte AORUS-style Desktop Control Center for Argon40 & Raspberry Pi (Fan Curve, Telemetry, Overclocking, Features)"
-authors = ["user"]
+description = "Desktop control center for Raspberry Pi in Argon40 cases: fan curve, telemetry, board-aware overclocking, GPIO lab"
+authors = ["wendelmax"]
+license = "MIT"
+repository = "https://github.com/wendelmax/argon-config-rs"
+readme = "README.md"
 
 [dependencies]
 eframe = { version = "0.31", default-features = false, features = [
