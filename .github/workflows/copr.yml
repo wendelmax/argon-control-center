@@ -1,0 +1,54 @@
+name: COPR
+
+# Builds the RPM in Fedora COPR (https://copr.fedorainfracloud.org) from a git tag, using
+# .copr/Makefile. Runs after each GitHub release (called from package.yml) or manually.
+# Requires the COPR_CONFIG secret: the contents of the API configuration from
+# https://copr.fedorainfracloud.org/api/ (the [copr-cli] block). Without it the job is skipped.
+# The COPR project must exist (argon-control-center, aarch64 chroots, internet access enabled).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag to build (for example v0.2.0)"
+        required: true
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+    secrets:
+      COPR_CONFIG:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  copr:
+    name: Build in COPR
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    env:
+      REF: ${{ inputs.ref }}
+      COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+      CLONE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+    steps:
+      - name: Submit build
+        run: |
+          if [ -z "$COPR_CONFIG" ]; then
+            echo "::notice::COPR_CONFIG is not set; skipping the COPR build."
+            exit 0
+          fi
+          case "$REF" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::Invalid tag '$REF'"; exit 1 ;; esac
+          dnf install -y copr-cli
+          install -d ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+          OWNER=$(sed -n 's/^username *= *//p' ~/.config/copr | head -1)
+          [ -n "$OWNER" ] || { echo "::error::No username in COPR_CONFIG"; exit 1; }
+          copr-cli buildscm "$OWNER/argon-control-center" \
+            --clone-url "$CLONE_URL" \
+            --commit "$REF" \
+            --method make_srpm \
+            --spec packaging/rpm/argon-control-center.spec

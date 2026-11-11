@@ -137,6 +137,7 @@ Download the package for your distribution from the [latest release](https://git
 |---|---|
 | Debian, Ubuntu, Raspberry Pi OS, Armbian | `sudo apt install ./argon-control-center_<version>_arm64.deb` |
 | Fedora | `sudo dnf install ./argon-control-center-<version>-1.<dist>.aarch64.rpm` |
+| Fedora (COPR) | `sudo dnf copr enable wendelmax/argon-control-center && sudo dnf install argon-control-center` |
 | Arch Linux ARM | `sudo pacman -U ./argon-control-center-<version>-1-aarch64.pkg.tar.zst` |
 | Arch Linux ARM (AUR) | `yay -S argon-control-center` (or any AUR helper) |
 
@@ -371,6 +372,8 @@ Versions follow [Semantic Versioning](https://semver.org/): increment **MAJOR** 
 Pushing the tag builds and tests every package and publishes a GitHub Release named "Argon Control Center X.Y.Z". The release notes come from the changelog and include installation instructions and checksums. Tags with a pre-release suffix such as `v1.2.0-rc.1` are published as pre-releases. Preview the notes with `scripts/release-notes.sh vX.Y.Z`.
 
 After the release, the [AUR package](https://aur.archlinux.org/packages/argon-control-center) is updated with the checksum of the release tarball (`.github/workflows/aur.yml`). It needs the `AUR_SSH_PRIVATE_KEY` repository secret, holding a private key whose public half is registered in the maintainer's AUR account; without it the step is skipped. To publish an existing release, run the AUR workflow manually with its version.
+
+The release also starts a build in [Fedora COPR](https://copr.fedorainfracloud.org/coprs/wendelmax/argon-control-center/) (`.github/workflows/copr.yml`), which builds the source RPM from the tag with `.copr/Makefile`, the same Makefile CI uses. It needs the `COPR_CONFIG` repository secret (the API configuration from https://copr.fedorainfracloud.org/api/) and an existing COPR project named `argon-control-center` with aarch64 chroots and internet access enabled for builds (Cargo downloads the crates). Run the COPR workflow manually to build an existing tag.
 
 ## Project structure
 
