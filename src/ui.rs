@@ -112,6 +112,7 @@ pub struct ArgonControlCenterApp {
     gpio_panel: gpio::GpioPanel,
     gpio_query: String,
     pinout: Option<PinoutTexture>,
+    app_icon: Option<egui::TextureHandle>,
     pinout_rx: Option<std::sync::mpsc::Receiver<Option<crate::pinout::Pinout>>>,
 
     // Status & Logs
@@ -212,6 +213,7 @@ impl ArgonControlCenterApp {
             gpio_panel: gpio::GpioPanel::default(),
             gpio_query: String::new(),
             pinout: None,
+            app_icon: None,
             pinout_rx: {
                 // Pre-render the GPIO pin-out diagram while the app starts.
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -245,6 +247,23 @@ impl ArgonControlCenterApp {
             ColorScheme::System => configure_kde_breeze_style(ctx, &self.kde_palette),
             ColorScheme::Aorus => configure_aorus_style(ctx),
         }
+    }
+
+    /// The application icon, rasterized once from the embedded SVG.
+    fn app_logo(&mut self, ui: &mut Ui, size: f32) {
+        let texture = self.app_icon.get_or_insert_with(|| {
+            const PX: usize = 128;
+            let rgba = crate::icon::rgba(PX as u32).unwrap_or_else(|| vec![0; PX * PX * 4]);
+            ui.ctx().load_texture(
+                "app-icon",
+                egui::ColorImage::from_rgba_unmultiplied([PX, PX], &rgba),
+                egui::TextureOptions {
+                    mipmap_mode: Some(egui::TextureFilter::Linear),
+                    ..egui::TextureOptions::LINEAR
+                },
+            )
+        });
+        ui.add(egui::Image::new((texture.id(), Vec2::splat(size))));
     }
 
     fn log_result(&mut self, action: &str, res: Result<String, String>) {
@@ -527,22 +546,10 @@ impl ArgonControlCenterApp {
         let collapsed = self.sidebar_collapsed;
 
         // Header: logo (+ name when expanded) and the collapse / expand toggle.
-        let logo = |ui: &mut Ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
-            ui.painter()
-                .rect_filled(logo_rect, CornerRadius::same(4), pal.selection_bg);
-            ui.painter().text(
-                logo_rect.center(),
-                Align2::CENTER_CENTER,
-                "⚙",
-                FontId::new(15.0, FontFamily::Proportional),
-                crate::system_colors::on_color(pal.selection_bg),
-            );
-        };
         let mut toggle = false;
         if collapsed {
             ui.vertical_centered(|ui| {
-                logo(ui);
+                self.app_logo(ui, 28.0);
                 ui.add_space(4.0);
                 toggle = ui
                     .add(egui::Button::new(RichText::new("»").size(14.0)).frame(false))
@@ -551,7 +558,7 @@ impl ArgonControlCenterApp {
             });
         } else {
             ui.horizontal(|ui| {
-                logo(ui);
+                self.app_logo(ui, 28.0);
                 ui.label(
                     RichText::new("Argon")
                         .size(14.5)
@@ -694,16 +701,7 @@ impl ArgonControlCenterApp {
         // Same branding as the sidebar: logo and accent come from the active palette.
         // Status (daemon, 5 V, board) lives in the footer.
         ui.horizontal(|ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), Sense::hover());
-            let painter = ui.painter();
-            painter.rect_filled(logo_rect, CornerRadius::same(5), pal.selection_bg);
-            painter.text(
-                logo_rect.center(),
-                Align2::CENTER_CENTER,
-                "⚙",
-                FontId::new(17.0, FontFamily::Proportional),
-                crate::system_colors::on_color(pal.selection_bg),
-            );
+            self.app_logo(ui, 32.0);
             ui.label(
                 RichText::new("Argon")
                     .size(18.0)

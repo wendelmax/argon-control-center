@@ -9,6 +9,7 @@ Release notes on GitHub are generated from the section matching the tag.
 ## [Unreleased]
 
 ### Changed
+- The sidebar and top bar show the application icon instead of a gear.
 - GPIO Lab redesigned as a workbench: a toolbar with GPIO, I2C and serial status and a pin search; the pinout (diagram or a table with mode, pull, level and edges) next to an inspector with mode, pull and drive controls and the equivalent `pinctrl`, `gpioget`/`gpioset` and Python commands with a copy button; and a bottom panel with Analyzer, Serial, I2C and Log tabs. Double-clicking a pin toggles an output or adds an input to the analyzer; pins used by I2C or UART are left unchanged. Each tab shows only its own output, and the serial port and the command line have separate inputs.
 
 ### Fixed
