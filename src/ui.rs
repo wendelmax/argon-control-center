@@ -253,6 +253,46 @@ impl ArgonControlCenterApp {
         ui.add(egui::Image::new((texture.id(), Vec2::splat(size))));
     }
 
+    /// Warning with an Enable I2C action when the Argon fan controller's bus is missing.
+    fn draw_fan_bus_warning(&mut self, ui: &mut Ui) {
+        if crate::argon::fan_bus_available() || !crate::argon::fan_bus_expected() {
+            return;
+        }
+        let t = texts(self.lang);
+        egui::Frame::new()
+            .fill(uc().amber.gamma_multiply(0.12))
+            .stroke(Stroke::new(1.0_f32, uc().amber))
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(t.fan_bus_off)
+                        .size(13.5)
+                        .strong()
+                        .color(uc().amber),
+                );
+                ui.label(
+                    RichText::new(t.fan_bus_off_body)
+                        .size(12.5)
+                        .color(uc().text_primary),
+                );
+                ui.add_space(4.0);
+                let r = aorus_action_button(ui, t.btn_enable_i2c, uc().btn_orange, uc().orange);
+                if r.clicked() {
+                    let res = crate::argon::enable_fan_bus();
+                    self.log_result(t.btn_enable_i2c, res);
+                }
+                aorus_tooltip(
+                    r,
+                    t.btn_enable_i2c,
+                    t.btn_enable_i2c_tip,
+                    Some("dtparam=i2c_arm=on"),
+                );
+            });
+        ui.add_space(10.0);
+    }
+
     fn log_result(&mut self, action: &str, res: Result<String, String>) {
         match res {
             Ok(msg) => {
@@ -711,6 +751,7 @@ impl ArgonControlCenterApp {
         let t = texts(self.lang);
         let pal = self.active_palette();
         let mut open_services = false;
+        let mut open_fan = false;
         ui.horizontal_wrapped(|ui| {
             let msg = self.status_message.as_deref().unwrap_or(t.ready_status);
             let status_color = if self.status_is_error {
@@ -765,6 +806,27 @@ impl ArgonControlCenterApp {
                 );
                 aorus_tooltip(v, "5V Power Rail", t.voltage_tip, Some(&alarm_path));
 
+                if !crate::argon::fan_bus_available() && crate::argon::fan_bus_expected() {
+                    let f = ui.add(
+                        egui::Button::new(
+                            RichText::new(t.footer_i2c_off)
+                                .size(11.5)
+                                .strong()
+                                .color(pal.negative_red),
+                        )
+                        .frame(false),
+                    );
+                    if f.clicked() {
+                        open_fan = true;
+                    }
+                    aorus_tooltip(
+                        f,
+                        t.fan_bus_off,
+                        t.fan_bus_off_body,
+                        Some(crate::argon::ARGON_I2C_BUS),
+                    );
+                }
+
                 let (d_col, d_txt) = if self.telemetry.argon_service_active {
                     (pal.positive_green, t.daemon_online)
                 } else {
@@ -787,6 +849,9 @@ impl ArgonControlCenterApp {
         });
         if open_services {
             self.active_tab = ActiveTab::ServicesAndConfig;
+        }
+        if open_fan {
+            self.active_tab = ActiveTab::SmartFan;
         }
 
         // Compact system line; full details on hover.
@@ -2271,6 +2336,7 @@ impl ArgonControlCenterApp {
 
     fn draw_smart_fan_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
+        self.draw_fan_bus_warning(ui);
         responsive_two_columns(
             ui,
             self,

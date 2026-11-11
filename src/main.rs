@@ -75,6 +75,12 @@ fn main() -> eframe::Result<()> {
             "CPU Temp      : {:.1} °C | Target Fan: {}% | Argononed: {}",
             tel.cpu_temp_c, tel.target_fan_speed_pct, tel.argon_service_status
         );
+        if !crate::argon::fan_bus_available() && crate::argon::fan_bus_expected() {
+            println!(
+                "Fan control   : NOT ACTIVE - I2C is off ({} missing); enable it on the Fan page or add dtparam=i2c_arm=on to config.txt",
+                crate::argon::ARGON_I2C_BUS
+            );
+        }
         println!(
             "Power         : {} under-voltage event(s) since boot{}",
             tel.undervoltage_events,

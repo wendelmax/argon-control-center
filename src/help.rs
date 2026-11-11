@@ -40,7 +40,7 @@ static EN: [Section; 11] = [
     s(
         "Fan",
         "Edit the argononed fan curve by dragging its points, or pick a profile (Silent, Standard, Performance, Full speed). Saving writes /etc/argononed.conf and restarts the service.\n\n\
-         Manual mode sets a fixed speed directly over I2C. The automatic curve only works while argononed is running.",
+         Manual mode sets a fixed speed directly over I2C. The automatic curve only works while argononed is running. Both need the I2C bus: when it is disabled in config.txt the page shows a warning with Enable I2C, and the footer shows Fan: I2C off.",
         Some(ActiveTab::SmartFan),
     ),
     s(
@@ -119,7 +119,7 @@ static PT: [Section; 11] = [
     s(
         "Ventoinha",
         "Edite a curva da ventoinha do argononed arrastando os pontos ou escolha um perfil (Silencioso, Padrão, Desempenho, Máxima). Salvar grava /etc/argononed.conf e reinicia o serviço.\n\n\
-         O modo manual define uma rotação fixa direto pelo I2C. A curva automática só funciona com o argononed em execução.",
+         O modo manual define uma rotação fixa direto pelo I2C. A curva automática só funciona com o argononed em execução. Os dois precisam do barramento I2C: quando ele está desativado no config.txt, a página mostra um aviso com Ativar I2C e o rodapé mostra Ventoinha: I2C desligado.",
         Some(ActiveTab::SmartFan),
     ),
     s(
