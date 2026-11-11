@@ -62,7 +62,11 @@ fn main() -> eframe::Result<()> {
         println!(
             "Power         : {} under-voltage event(s) since boot{}",
             tel.undervoltage_events,
-            if tel.undervoltage_alarm { " (active now)" } else { "" }
+            if tel.undervoltage_alarm {
+                " (active now)"
+            } else {
+                ""
+            }
         );
         println!(
             "RAM Usage     : {} / {} MB ({:.1}%)",
@@ -108,7 +112,11 @@ fn run_stress_cli(secs: u64) -> eframe::Result<()> {
             r.duration_s,
             r.last_temp_c,
             r.max_temp_c,
-            if r.min_mhz_under_load == u32::MAX { 0 } else { r.min_mhz_under_load },
+            if r.min_mhz_under_load == u32::MAX {
+                0
+            } else {
+                r.min_mhz_under_load
+            },
             r.undervoltage_samples
         );
     }
