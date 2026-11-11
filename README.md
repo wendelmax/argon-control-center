@@ -74,7 +74,7 @@ The board and the Argon case are detected automatically at startup, so presets a
 - Argon BLSTR DAC and IR receiver overlays, OLED settings and EEPROM power-supply limit.
 
 **GPIO and serial lab**
-- Live state of the 40-pin header: level, direction, pull and edge counters.
+- Live state of the 40-pin header on an annotated pin-out diagram (or a compact list): level, direction, pull and edge counters; click a pin to inspect and drive it.
 - Serial monitor for UART and USB adapters, and I2C diagnostic commands.
 
 **Service management**
@@ -325,6 +325,11 @@ src/
   settings.rs        user preferences
   i18n.rs            English and Portuguese strings
   privileged.rs      Polkit elevation and atomic writes
+  pinout.rs          GPIO pin-out diagram rendering and pin positions
+  power.rs           5 V supply monitoring
+  stability.rs       CPU stability test
+  tryboot.rs         trial boot for firmware overclocking
+assets/              pin-out diagram and asset credits
 packaging/           Debian, RPM and Arch packaging, udev rules, permission setup
 scripts/             install, version bump and release notes helpers
 .github/workflows/   CI and package/release pipelines
@@ -342,7 +347,7 @@ Contributions are welcome. Please open an issue to discuss larger changes first.
 
 ## Security
 
-Overclocking and over-voltage settings can make a system unstable. Use the trial boot, keep active cooling in place and fix any under-voltage first. If a board no longer boots after a permanent change, edit `config.txt` on the boot media from another computer: restore `config.txt.argoncc.bak` or remove the `ARGON AORUS CONTROL CENTER` block.
+Overclocking and over-voltage settings can make a system unstable. Use the trial boot, keep active cooling in place and fix any under-voltage first. If a board no longer boots after a permanent change, edit `config.txt` on the boot media from another computer: restore `config.txt.argoncc.bak` or remove the `ARGON CONTROL CENTER` block.
 
 Stopping `argononed` disables the automatic fan curve and the case power button.
 
@@ -351,5 +356,7 @@ To report a security issue, please use [GitHub private vulnerability reporting](
 ## License
 
 Released under the [MIT License](LICENSE).
+
+The GPIO pin-out diagram (`assets/gpio.svg`) is by Dirk Koudstaal (element14) and is licensed under Creative Commons Attribution-ShareAlike; see [assets/CREDITS.md](assets/CREDITS.md).
 
 Argon40, Raspberry Pi and AORUS are trademarks of their respective owners. This project is not affiliated with or endorsed by them.

@@ -290,7 +290,7 @@ impl BoardInfo {
     pub fn details(&self) -> String {
         let p = |x: Probe| match x {
             Probe::Present => "✔",
-            Probe::Absent => "✘",
+            Probe::Absent => "✖",
             Probe::NoAccess => "? (no access to /dev/i2c-1)",
         };
         format!(
@@ -300,7 +300,7 @@ impl BoardInfo {
             self.soc.name(),
             self.ram_mb.map(|m| format!("{m} MB")).unwrap_or_else(|| "—".into()),
             self.case.name(),
-            if self.argon_scripts { "✔" } else { "✘" },
+            if self.argon_scripts { "✔" } else { "✖" },
             p(self.fan_mcu),
             p(self.oled),
             p(self.rtc),

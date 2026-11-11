@@ -21,6 +21,16 @@ First public release.
 - `config.txt` hardware toggles: I2C, SPI, I2S, audio, UART, VC4 KMS, camera and display detection, Argon BLSTR DAC and IR receiver.
 - GPIO and serial lab: 40-pin logic analyzer and a serial/I2C console.
 - `argononed` service management with an explanation of its role before it is stopped.
+- Each dashboard style has its own presentation:
+  - Compact (btop-style): one titled box per row (cpu, mem, net, argon), each split into two columns, with gradient block meters filled left to right from 0 to 100 % (per core, memory, swap, disks, network, fan, temperature) and key/value lines; no graphs.
+  - Gauges: radial gauges only — total CPU plus one gauge per core, clock, temperature, fan, memory, swap, one gauge per disk, and network download / upload.
+  - Charts: rings and 60 s history charts.
+- Dashboards are read-only: the quick fan, clock-profile, governor and argononed controls were removed from the compact dashboard and from the cores card. A status row (fan mode, clock profile, argononed) on every dashboard and the CPU / temperature / fan rings open the page where the setting can be changed with its safeguards.
+- Charts dashboard: memory and network have separate charts; network is scaled to its own peak.
+- Per-core CPU history chart (one line per core, 60 s) in the cores card, above the per-core bars.
+- Charts dashboard: temperature, cores, memory and storage each take a full row. The system summary (board, OS, kernel, CPU range, boot profile) is a compact line in the footer on every page, with full details on hover.
+- Full-width footer in every layout with the action status, argononed state, 5 V supply, IP, uptime, privilege mode and the system line; the sidebar status box and the top-bar badges were merged into it.
+- Compact sidebar (176 px) that collapses to icons only (52 px) and the choice is remembered.
 - Settings page with independent appearance options: sidebar or top-tab navigation, system or AORUS colors, and compact, charts or gauges dashboards, plus interface scaling from 80% to 150%.
 - System colors follow the desktop scheme on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, in light and dark variants with enforced contrast.
 - Layouts adapt to narrow windows: dashboard rings and controls reflow, the GPIO header switches to a single column and navigation becomes a wrapping tab strip.
@@ -32,11 +42,20 @@ First public release.
 - `--status` command-line report with the detected hardware and the current overclock.
 - `scripts/bump-version.sh` for MAJOR.MINOR.PATCH version bumps and release tags; version tags publish a GitHub Release automatically.
 
+- GPIO lab pin-out diagram: the 40-pin header drawing (Dirk Koudstaal, element14, CC BY-SA) with live levels on every GPIO, click-to-select and per-pin tooltips; the compact list remains available. Credit is shown in Settings > About. The diagram is rendered on a background thread at start-up, so opening the lab is instant.
 - Safe overclocking: settings above factory clocks are tested with a one-shot trial boot (`tryboot.txt`, Raspberry Pi 4 and 5) and kept only after a stable test; a power cycle always returns to the previous settings.
 - Stability test (1, 3 or 10 minutes, or `--stress <seconds>`) recording temperature, clock and the 5 V rail, with results preserved if the system freezes.
 - Power-supply guard: overclocking above factory clocks is blocked while under-voltage has been detected since boot; `--status` reports under-voltage events.
 
 ### Fixed
+- Characters that egui's fonts cannot draw in normal text (shown as empty squares next to labels, selected options and the daemon status) were replaced; settings options use a drawn radio marker, and a test fails if any UI string uses a character missing from egui's proportional fonts.
+- The window title, logs and the managed `config.txt` block are named "Argon Control Center"; AORUS only names the color scheme. Blocks written with the old marker are still recognised and replaced.
+- The RPM package lists the asset credits file.
+- With system colors, tooltip titles and section headings also use the desktop accent; amber is kept for warnings.
+- With system colors, action buttons, card accents and selection outlines use the desktop accent instead of orange; orange is kept for the AORUS scheme, and warnings keep amber and red.
+- Switching between sidebar and top-tab navigation no longer changes colors: both use the active color scheme for branding and selection.
+- Horizontal overflow on the dashboard and Settings pages: option cards and charts no longer exceed their column, long values in About wrap, and the page area scrolls vertically only.
+- Removed the duplicate Settings gear from the headers; Settings is always in the navigation (also in the narrow-window tab strip).
 - Saving the hardware interfaces page no longer writes overclock values selected elsewhere (for example from the dashboard) to `config.txt`, and saving an overclock no longer changes interfaces.
 - The under-voltage sensor is located by name (`rpi_volt`) instead of a fixed hwmon index.
 

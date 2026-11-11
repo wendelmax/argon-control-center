@@ -3,6 +3,7 @@ pub mod board;
 pub mod gpio_lab;
 pub mod i18n;
 pub mod overclock;
+pub mod pinout;
 pub mod power;
 pub mod privileged;
 pub mod settings;
@@ -85,7 +86,7 @@ fn main() -> eframe::Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("ARGON AORUS CONTROL CENTER — System & Hardware Configurator")
+            .with_title("Argon Control Center")
             .with_inner_size([1160.0, 750.0])
             .with_min_inner_size([480.0, 400.0]),
         ..Default::default()

@@ -54,6 +54,8 @@ pub struct Settings {
     pub temp_unit: TempUnit,
     /// Interface zoom factor (egui zoom), clamped to `UI_SCALE_MIN..=UI_SCALE_MAX`.
     pub ui_scale: f32,
+    /// Sidebar layout shows icons only.
+    pub sidebar_collapsed: bool,
     pub tab: ActiveTab,
 }
 
@@ -66,6 +68,7 @@ impl Default for Settings {
             dashboard: DashboardStyle::Compact,
             temp_unit: TempUnit::Celsius,
             ui_scale: 1.0,
+            sidebar_collapsed: false,
             tab: ActiveTab::Dashboard,
         }
     }

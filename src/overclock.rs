@@ -5,6 +5,21 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+/// Markers of the block this application manages in `config.txt`.
+pub const BLOCK_BEGIN: &str = "# --- BEGIN ARGON CONTROL CENTER ---";
+pub const BLOCK_END: &str = "# --- END ARGON CONTROL CENTER ---";
+/// Markers written by earlier versions; still recognised so the block is replaced, not duplicated.
+const LEGACY_BLOCK_BEGIN: &str = "# --- BEGIN ARGON AORUS CONTROL CENTER ---";
+const LEGACY_BLOCK_END: &str = "# --- END ARGON AORUS CONTROL CENTER ---";
+
+fn is_block_begin(line: &str) -> bool {
+    line == BLOCK_BEGIN || line == LEGACY_BLOCK_BEGIN
+}
+
+fn is_block_end(line: &str) -> bool {
+    line == BLOCK_END || line == LEGACY_BLOCK_END
+}
+
 pub fn get_boot_config_path() -> &'static str {
     if Path::new("/boot/firmware/config.txt").exists() {
         "/boot/firmware/config.txt"
@@ -63,7 +78,7 @@ impl OcPreset {
             OcPreset::StockBoost => format!("⚖ {}", ghz(p.stock_mhz)),
             OcPreset::OcGaming => format!("🚀 {}", ghz(p.oc_mhz)),
             OcPreset::OcExtreme => format!("🔥 {}", ghz(p.extreme_mhz)),
-            OcPreset::Custom => "🎛 Custom".to_string(),
+            OcPreset::Custom => "Custom".to_string(),
         }
     }
 }
@@ -263,7 +278,7 @@ pub fn load_boot_config() -> BootOcConfig {
     BootOcConfig::default()
 }
 
-/// Updates `config.txt` preserving user comments & sections while updating Hardware Toggles and the AORUS Overclocking block.
+/// Updates `config.txt` preserving user comments & sections while updating hardware toggles and the managed overclocking block.
 pub fn update_boot_config_str(original: &str, cfg: &BootOcConfig) -> String {
     update_boot_config_str_for(original, cfg, &crate::board::current().oc)
 }
@@ -297,11 +312,11 @@ pub fn update_boot_config_str_for(
 
     for raw_line in original.lines() {
         let trimmed = raw_line.trim();
-        if trimmed == "# --- BEGIN ARGON AORUS CONTROL CENTER ---" {
+        if is_block_begin(trimmed) {
             in_managed_block = true;
             continue;
         }
-        if trimmed == "# --- END ARGON AORUS CONTROL CENTER ---" {
+        if is_block_end(trimmed) {
             in_managed_block = false;
             continue;
         }
@@ -407,7 +422,7 @@ pub fn update_boot_config_str_for(
     }
 
     // Append managed section at the end (under [all])
-    out_lines.push("# --- BEGIN ARGON AORUS CONTROL CENTER ---".to_string());
+    out_lines.push(BLOCK_BEGIN.to_string());
     if !seen_i2c && cfg.i2c_arm {
         out_lines.push("dtparam=i2c_arm=on".to_string());
     }
@@ -471,7 +486,7 @@ pub fn update_boot_config_str_for(
     if cfg.temp_limit_c != 85 {
         out_lines.push(format!("temp_limit={}", cfg.temp_limit_c));
     }
-    out_lines.push("# --- END ARGON AORUS CONTROL CENTER ---".to_string());
+    out_lines.push(BLOCK_END.to_string());
 
     out_lines.join("\n") + "\n"
 }
@@ -634,6 +649,20 @@ mod tests {
             out.contains("#dtparam=i2c_arm=on"),
             "OC save must not enable I2C: {out}"
         );
+    }
+
+    #[test]
+    fn replaces_block_written_with_legacy_marker() {
+        let pi4 = OcProfile::for_soc(Soc::Bcm2711);
+        let old = "arm_boost=1\n# --- BEGIN ARGON AORUS CONTROL CENTER ---\narm_freq=2000\nover_voltage=4\n# --- END ARGON AORUS CONTROL CENTER ---\n";
+        let cfg = BootOcConfig::default_for(&pi4);
+        let out = update_boot_config_str_for(old, &cfg, &pi4);
+        assert!(!out.contains("AORUS"), "{out}");
+        assert!(
+            !out.contains("arm_freq=2000"),
+            "old block must be replaced: {out}"
+        );
+        assert_eq!(out.matches(BLOCK_BEGIN).count(), 1);
     }
 
     #[test]

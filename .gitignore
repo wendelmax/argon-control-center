@@ -1,2 +1,5 @@
 /target
 /dist
+
+# Third-party artwork that must not be redistributed (Argon40 configurator icon)
+assets/ar1config.png

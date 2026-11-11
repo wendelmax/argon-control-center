@@ -42,6 +42,8 @@ pub struct TelemetryState {
     // CPU
     pub cpu_total_usage_pct: f32,
     pub cpu_core_usage_pct: Vec<(String, f32)>,
+    /// Per-core load history, one buffer per core in `cpu_core_usage_pct` order.
+    pub core_history: Vec<VecDeque<f32>>,
     pub cpu_cur_freq_mhz: u32,
     pub cpu_min_freq_mhz: u32,
     pub cpu_max_freq_mhz: u32,
@@ -126,6 +128,7 @@ impl TelemetryState {
             load_avg: (0.0, 0.0, 0.0),
             cpu_total_usage_pct: 0.0,
             cpu_core_usage_pct: Vec::new(),
+            core_history: Vec::new(),
             cpu_cur_freq_mhz: 1800,
             cpu_min_freq_mhz: 600,
             cpu_max_freq_mhz: 1800,
@@ -197,8 +200,18 @@ impl TelemetryState {
                 }
             }
         }
-        core_list.sort_by(|a, b| a.0.cmp(&b.0));
+        // Numeric order (CPU2 before CPU10).
+        core_list.sort_by_key(|(name, _)| {
+            name.trim_start_matches("CPU")
+                .parse::<u32>()
+                .unwrap_or(u32::MAX)
+        });
         if !core_list.is_empty() {
+            self.core_history
+                .resize_with(core_list.len(), || VecDeque::from(vec![0.0; HISTORY_LEN]));
+            for (hist, (_, pct)) in self.core_history.iter_mut().zip(&core_list) {
+                push_history(hist, *pct);
+            }
             self.cpu_core_usage_pct = core_list;
         }
         self.prev_cpu_samples = cur_samples;

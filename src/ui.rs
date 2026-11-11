@@ -18,8 +18,8 @@ use crate::privileged::is_root;
 use crate::settings::{ColorScheme, DashboardStyle, Layout};
 use crate::telemetry::TelemetryState;
 use crate::theme::{
-    configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart,
-    draw_kde_donut_chart_sized, set_ui_colors, uc, KdeBreezePalette, UiColors,
+    configure_kde_breeze_style, draw_kde_area_line_chart, draw_kde_donut_chart, set_ui_colors, uc,
+    KdeBreezePalette, UiColors,
 };
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Response, RichText, Sense,
@@ -65,6 +65,7 @@ pub struct ArgonControlCenterApp {
     pub colors: ColorScheme,
     pub dashboard: DashboardStyle,
     pub ui_scale: f32,
+    pub sidebar_collapsed: bool,
     pub kde_palette: KdeBreezePalette,
     palette_rx: Option<std::sync::mpsc::Receiver<KdeBreezePalette>>,
     last_palette_check: Instant,
@@ -107,6 +108,9 @@ pub struct ArgonControlCenterApp {
     // Services & Inspector
     pub config_preview_tab: ConfigPreviewTab,
     pub gpio_lab: GpioSerialLabState,
+    gpio_view_diagram: bool,
+    pinout: Option<PinoutTexture>,
+    pinout_rx: Option<std::sync::mpsc::Receiver<Option<crate::pinout::Pinout>>>,
 
     // Status & Logs
     pub status_message: Option<String>,
@@ -154,7 +158,7 @@ impl ArgonControlCenterApp {
 
         let mut logs = VecDeque::new();
         logs.push_back(format!(
-            "[INIT] Argon AORUS Control Center — {} ({})",
+            "[INIT] Argon Control Center — {} ({})",
             telemetry.board_model, telemetry.os_name
         ));
         logs.push_back(format!(
@@ -169,6 +173,7 @@ impl ArgonControlCenterApp {
             colors: prefs.colors,
             dashboard: prefs.dashboard,
             ui_scale: prefs.ui_scale,
+            sidebar_collapsed: prefs.sidebar_collapsed,
             kde_palette,
             palette_rx: None,
             last_palette_check: Instant::now(),
@@ -201,6 +206,18 @@ impl ArgonControlCenterApp {
             oled_hw_present,
             config_preview_tab: ConfigPreviewTab::ArgonFanConf,
             gpio_lab: GpioSerialLabState::new(),
+            gpio_view_diagram: true,
+            pinout: None,
+            pinout_rx: {
+                // Pre-render the GPIO pin-out diagram while the app starts.
+                let (tx, rx) = std::sync::mpsc::channel();
+                let ctx = cc.egui_ctx.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(crate::pinout::render(900));
+                    ctx.request_repaint();
+                });
+                Some(rx)
+            },
             status_message: None,
             status_is_error: false,
             action_logs: logs,
@@ -342,22 +359,45 @@ impl eframe::App for ArgonControlCenterApp {
         ctx.request_repaint_after(tick_interval);
 
         self.poll_system_palette(ctx);
+        if let Some(rx) = &self.pinout_rx {
+            match rx.try_recv() {
+                Ok(rendered) => {
+                    self.pinout = Some(PinoutTexture::from_render(ctx, rendered));
+                    self.pinout_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.pinout_rx = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
         self.persist_prefs_if_changed();
 
         let pal = self.active_palette();
         let wide = ctx.screen_rect().width() >= SIDEBAR_MIN_WIDTH;
+
+        // Footer first: panels added earlier take the full window width.
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(
+                egui::Frame::new()
+                    .fill(pal.window_alt_bg)
+                    .stroke(Stroke::new(1.0_f32, pal.border_subtle))
+                    .inner_margin(egui::Margin::symmetric(14, 5)),
+            )
+            .show(ctx, |ui| {
+                self.draw_bottom_bar(ui);
+            });
+
         match self.layout {
             Layout::Sidebar => {
                 // Kirigami-style left navigation; on narrow windows the header shows a tab strip.
                 if wide {
                     egui::SidePanel::left("kde_kirigami_sidebar")
                         .resizable(false)
-                        .exact_width(220.0)
+                        .exact_width(if self.sidebar_collapsed { 52.0 } else { 176.0 })
                         .frame(
                             egui::Frame::new()
                                 .fill(pal.window_alt_bg)
                                 .stroke(Stroke::new(1.0_f32, pal.border_subtle))
-                                .inner_margin(egui::Margin::symmetric(10, 10)),
+                                .inner_margin(egui::Margin::symmetric(6, 8)),
                         )
                         .show(ctx, |ui| {
                             self.draw_kde_sidebar(ui, ctx);
@@ -388,17 +428,6 @@ impl eframe::App for ArgonControlCenterApp {
             }
         }
 
-        egui::TopBottomPanel::bottom("status_bar")
-            .frame(
-                egui::Frame::new()
-                    .fill(pal.window_alt_bg)
-                    .stroke(Stroke::new(1.0_f32, pal.border_subtle))
-                    .inner_margin(egui::Margin::symmetric(14, 5)),
-            )
-            .show(ctx, |ui| {
-                self.draw_bottom_bar(ui);
-            });
-
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -406,9 +435,9 @@ impl eframe::App for ArgonControlCenterApp {
                     .inner_margin(egui::Margin::symmetric(14, 10)),
             )
             .show(ctx, |ui| {
-                // Vertical scrolling for long pages; horizontal only as a fallback when a block
-                // cannot shrink further on very narrow windows (instead of clipping it).
-                egui::ScrollArea::both()
+                // Vertical scrolling only: every page adapts its width to the window, so a
+                // horizontal scrollbar would just expose rounding overflow.
+                egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.active_tab {
                         ActiveTab::Dashboard => match self.dashboard {
@@ -440,6 +469,7 @@ impl ArgonControlCenterApp {
             dashboard: self.dashboard,
             temp_unit: self.temp_unit,
             ui_scale: self.ui_scale,
+            sidebar_collapsed: self.sidebar_collapsed,
             tab: self.active_tab,
         };
         if now != self.saved_prefs {
@@ -489,153 +519,104 @@ impl ArgonControlCenterApp {
     fn draw_kde_sidebar(&mut self, ui: &mut Ui, _ctx: &egui::Context) {
         let t = texts(self.lang);
         let pal = self.active_palette();
+        let collapsed = self.sidebar_collapsed;
 
-        // Sidebar App Branding Header
-        ui.horizontal(|ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(28.0, 28.0), Sense::hover());
-            let painter = ui.painter();
-            painter.rect_filled(logo_rect, CornerRadius::same(4), pal.selection_bg);
-            painter.text(
+        // Header: logo (+ name when expanded) and the collapse / expand toggle.
+        let logo = |ui: &mut Ui| {
+            let (logo_rect, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
+            ui.painter()
+                .rect_filled(logo_rect, CornerRadius::same(4), pal.selection_bg);
+            ui.painter().text(
                 logo_rect.center(),
                 Align2::CENTER_CENTER,
                 "⚙",
-                FontId::new(16.0, FontFamily::Proportional),
-                Color32::WHITE,
+                FontId::new(15.0, FontFamily::Proportional),
+                crate::system_colors::on_color(pal.selection_bg),
             );
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
+        };
+        let mut toggle = false;
+        if collapsed {
+            ui.vertical_centered(|ui| {
+                logo(ui);
+                ui.add_space(4.0);
+                toggle = ui
+                    .add(egui::Button::new(RichText::new("»").size(14.0)).frame(false))
+                    .on_hover_text(t.sidebar_expand)
+                    .clicked();
+            });
+        } else {
+            ui.horizontal(|ui| {
+                logo(ui);
                 ui.label(
                     RichText::new("Argon")
                         .size(14.5)
                         .strong()
                         .color(pal.text_normal),
                 );
-                ui.label(
-                    RichText::new("Control Center")
-                        .size(11.0)
-                        .color(pal.focus_blue),
-                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    toggle = ui
+                        .add(egui::Button::new(RichText::new("«").size(14.0)).frame(false))
+                        .on_hover_text(t.sidebar_collapse)
+                        .clicked();
+                });
             });
-        });
+        }
+        if toggle {
+            self.sidebar_collapsed = !self.sidebar_collapsed;
+        }
 
-        ui.add_space(6.0);
-        ui.separator();
         ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(2.0);
 
-        // Kirigami Navigation List
-        let tabs = nav_tabs(self.lang);
-
-        for (tab, label, tip) in tabs {
+        // Navigation: full labels, or icons only (name in the tooltip) when collapsed.
+        for (tab, label, tip) in nav_tabs(self.lang) {
             let selected = self.active_tab == tab;
-            let desired = Vec2::new(ui.available_width(), 34.0);
-            let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
+            let (rect, resp) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
             let painter = ui.painter_at(rect);
-
             if selected {
                 painter.rect_filled(rect, CornerRadius::same(4), pal.selected_fill);
-                painter.rect_stroke(
-                    rect,
-                    CornerRadius::same(4),
-                    Stroke::new(1.0_f32, pal.focus_blue),
-                    StrokeKind::Inside,
-                );
-                // Kirigami left active accent bar
                 let bar = Rect::from_min_size(
-                    Pos2::new(rect.left() + 2.0, rect.top() + 5.0),
-                    Vec2::new(3.5, rect.height() - 10.0),
+                    Pos2::new(rect.left() + 1.0, rect.top() + 6.0),
+                    Vec2::new(3.0, rect.height() - 12.0),
                 );
                 painter.rect_filled(bar, CornerRadius::same(2), pal.focus_blue);
             } else if resp.hovered() {
                 painter.rect_filled(rect, CornerRadius::same(4), pal.hover_bg);
             }
-
-            painter.text(
-                Pos2::new(rect.left() + 12.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                label,
-                FontId::new(13.0, FontFamily::Proportional),
-                if selected {
-                    pal.on_selected
-                } else {
-                    pal.text_normal
-                },
-            );
-
+            let color = if selected {
+                pal.on_selected
+            } else {
+                pal.text_normal
+            };
+            if collapsed {
+                let icon = label.split_once(' ').map(|(i, _)| i).unwrap_or(label);
+                painter.text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    icon,
+                    FontId::new(16.0, FontFamily::Proportional),
+                    color,
+                );
+            } else {
+                painter.text(
+                    Pos2::new(rect.left() + 10.0, rect.center().y),
+                    Align2::LEFT_CENTER,
+                    label,
+                    FontId::new(13.0, FontFamily::Proportional),
+                    color,
+                );
+            }
             if resp.clicked() {
                 self.active_tab = tab;
             }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
             aorus_tooltip(resp, label, tip, None);
-            ui.add_space(2.0);
+            ui.add_space(1.0);
         }
-
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-
-        // Sidebar Hardware Summary & Argononed Guardian Card
-        egui::Frame::new()
-            .fill(pal.view_bg)
-            .stroke(Stroke::new(1.0_f32, pal.border_subtle))
-            .corner_radius(CornerRadius::same(4))
-            .inner_margin(egui::Margin::symmetric(8, 8))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                let (daemon_col, daemon_txt) = if self.telemetry.argon_service_active {
-                    (pal.positive_green, t.daemon_online)
-                } else {
-                    (pal.negative_red, t.daemon_offline)
-                };
-                let badge_resp = ui.add(
-                    egui::Button::new(
-                        RichText::new(daemon_txt)
-                            .size(11.5)
-                            .strong()
-                            .color(daemon_col),
-                    )
-                    .frame(false),
-                );
-                if badge_resp.clicked() {
-                    self.active_tab = ActiveTab::ServicesAndConfig;
-                }
-                aorus_tooltip(
-                    badge_resp,
-                    "Systemd Daemon (argononed.service)",
-                    t.daemon_badge_tip,
-                    Some("/lib/systemd/system/argononed.service"),
-                );
-
-                ui.add_space(4.0);
-                let (v_col, v_txt) = if self.telemetry.undervoltage_alarm {
-                    (pal.negative_red, t.voltage_alert)
-                } else {
-                    (pal.positive_green, t.voltage_stable)
-                };
-                let v_resp = ui.label(RichText::new(v_txt).size(11.5).strong().color(v_col));
-                aorus_tooltip(
-                    v_resp,
-                    "5V Power Rail",
-                    t.voltage_tip,
-                    Some("/sys/class/hwmon/hwmon1/in0_lcrit_alarm"),
-                );
-
-                ui.add_space(4.0);
-                let board = crate::board::current();
-                ui.label(
-                    RichText::new(board.summary())
-                        .size(11.0)
-                        .color(pal.text_inactive),
-                )
-                .on_hover_text(format!(
-                    "{}\n\n{}",
-                    t.board_detect_tip,
-                    board.details()
-                ));
-                ui.label(
-                    RichText::new(format!("IP: {}", self.telemetry.ip_address))
-                        .size(11.0)
-                        .color(pal.text_inactive),
-                );
-            });
     }
 
     fn draw_kde_page_header(&mut self, ui: &mut Ui, ctx: &egui::Context) {
@@ -646,17 +627,12 @@ impl ArgonControlCenterApp {
             .map(|(_, label, _)| *label)
             .unwrap_or_default();
 
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(title)
-                    .size(17.0)
-                    .strong()
-                    .color(pal.text_normal),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.settings_shortcut(ui);
-            });
-        });
+        ui.label(
+            RichText::new(title)
+                .size(17.0)
+                .strong()
+                .color(pal.text_normal),
+        );
 
         // Narrow window: the sidebar is hidden, so show a wrapping tab strip instead.
         if ctx.screen_rect().width() < SIDEBAR_MIN_WIDTH {
@@ -665,33 +641,21 @@ impl ArgonControlCenterApp {
         }
     }
 
-    /// Gear button that opens the Settings page (shown in every header).
-    fn settings_shortcut(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        let selected = self.active_tab == ActiveTab::Settings;
-        let resp = segmented_pill(ui, "⚙", selected, uc().btn_cyan, uc().cyan);
-        if resp.clicked() {
-            self.active_tab = ActiveTab::Settings;
-        }
-        resp.on_hover_text(t.tab_settings_tip);
-    }
-
     /// Wrapping row of navigation buttons. `large` uses the wide classic buttons.
+    /// Uses the same palette roles as the sidebar so the layout never changes the colors.
     fn draw_tab_strip(&mut self, ui: &mut Ui, large: bool) {
-        let accent_fill = uc().btn_cyan;
-        let accent = uc().cyan;
+        let pal = self.active_palette();
+        let accent_fill = pal.selected_fill;
+        let accent = pal.focus_blue;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for (tab, title, tip) in nav_tabs(self.lang) {
-                if !large && tab == ActiveTab::Settings {
-                    continue; // already reachable from the gear button
-                }
                 let is_active = self.active_tab == tab;
                 let text = RichText::new(title)
                     .size(if large { 13.0 } else { 12.0 })
                     .strong()
                     .color(if is_active {
-                        crate::system_colors::on_color(accent_fill)
+                        pal.on_selected
                     } else {
                         uc().text_secondary
                     });
@@ -719,70 +683,35 @@ impl ArgonControlCenterApp {
     }
 
     fn draw_top_bar(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let t = texts(self.lang);
+        let pal = self.active_palette();
         let narrow = ctx.screen_rect().width() < SIDEBAR_MIN_WIDTH;
 
+        // Same branding as the sidebar: logo and accent come from the active palette.
+        // Status (daemon, 5 V, board) lives in the footer.
         ui.horizontal(|ui| {
             let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(logo_rect, CornerRadius::same(6), uc().btn_orange);
+            painter.rect_filled(logo_rect, CornerRadius::same(5), pal.selection_bg);
             painter.text(
                 logo_rect.center(),
                 Align2::CENTER_CENTER,
-                "⚡",
+                "⚙",
                 FontId::new(17.0, FontFamily::Proportional),
-                Color32::WHITE,
+                crate::system_colors::on_color(pal.selection_bg),
             );
             ui.label(
-                RichText::new("ARGON")
+                RichText::new("Argon")
                     .size(18.0)
                     .strong()
-                    .color(uc().text_primary),
+                    .color(pal.text_normal),
             );
             ui.label(
-                RichText::new("CONTROL CENTER")
+                RichText::new("Control Center")
                     .size(18.0)
                     .strong()
-                    .color(uc().orange),
+                    .color(pal.focus_blue),
             );
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.settings_shortcut(ui);
-                let (daemon_col, daemon_txt) = if self.telemetry.argon_service_active {
-                    (uc().green, t.daemon_online)
-                } else {
-                    (uc().red, t.daemon_offline)
-                };
-                let badge_resp = ui.add(
-                    egui::Button::new(
-                        RichText::new(daemon_txt)
-                            .size(11.5)
-                            .strong()
-                            .color(daemon_col),
-                    )
-                    .frame(false),
-                );
-                if badge_resp.clicked() {
-                    self.active_tab = ActiveTab::ServicesAndConfig;
-                }
-                aorus_tooltip(
-                    badge_resp,
-                    "Systemd Daemon (argononed.service)",
-                    t.daemon_badge_tip,
-                    Some("/lib/systemd/system/argononed.service"),
-                );
-            });
         });
-
-        if !narrow {
-            let board = crate::board::current();
-            ui.label(
-                RichText::new(board.summary())
-                    .size(12.0)
-                    .color(uc().text_secondary),
-            )
-            .on_hover_text(format!("{}\n\n{}", t.board_detect_tip, board.details()));
-        }
 
         ui.add_space(6.0);
         egui::Frame::new()
@@ -796,8 +725,12 @@ impl ArgonControlCenterApp {
             });
     }
 
+    /// Footer (full window width): action status, daemon / 5 V / network / session, and a
+    /// compact system line. Replaces the sidebar status box and the top-bar badges.
     fn draw_bottom_bar(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
+        let pal = self.active_palette();
+        let mut open_services = false;
         ui.horizontal_wrapped(|ui| {
             let msg = self.status_message.as_deref().unwrap_or(t.ready_status);
             let status_color = if self.status_is_error {
@@ -805,456 +738,361 @@ impl ArgonControlCenterApp {
             } else {
                 uc().cyan
             };
-            ui.label(RichText::new(msg).size(12.5).strong().color(status_color));
+            ui.label(RichText::new(msg).size(12.0).strong().color(status_color));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
                 let priv_label = if is_root() {
                     t.mode_root
                 } else {
                     t.mode_polkit
                 };
-                let resp = ui.add(
+                let mode = ui.add(
                     egui::Label::new(
-                        RichText::new(format!(
-                            "IP: {}  |  {}: {}  |  {}: {} ⓘ",
-                            self.telemetry.ip_address,
-                            t.uptime_label,
-                            self.telemetry.format_uptime(),
-                            t.mode_label,
-                            priv_label
-                        ))
-                        .size(12.0)
-                        .color(uc().text_secondary),
+                        RichText::new(priv_label)
+                            .size(11.5)
+                            .color(uc().text_secondary),
                     )
                     .sense(Sense::hover()),
                 );
-                aorus_tooltip(resp, t.mode_label, t.mode_tip, Some("/usr/bin/pkexec"));
+                aorus_tooltip(mode, t.mode_label, t.mode_tip, Some("/usr/bin/pkexec"));
+                ui.label(
+                    RichText::new(format!(
+                        "{} {}",
+                        t.uptime_label,
+                        self.telemetry.format_uptime()
+                    ))
+                    .size(11.5)
+                    .color(uc().text_secondary),
+                );
+                ui.label(
+                    RichText::new(format!("IP {}", self.telemetry.ip_address))
+                        .size(11.5)
+                        .color(uc().text_secondary),
+                );
+
+                let (v_col, v_txt) = if self.telemetry.undervoltage_alarm {
+                    (pal.negative_red, t.voltage_alert)
+                } else {
+                    (pal.positive_green, t.voltage_stable)
+                };
+                let alarm_path = crate::power::alarm_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "rpi_volt in0_lcrit_alarm".into());
+                let v = ui.add(
+                    egui::Label::new(RichText::new(v_txt).size(11.5).strong().color(v_col))
+                        .sense(Sense::hover()),
+                );
+                aorus_tooltip(v, "5V Power Rail", t.voltage_tip, Some(&alarm_path));
+
+                let (d_col, d_txt) = if self.telemetry.argon_service_active {
+                    (pal.positive_green, t.daemon_online)
+                } else {
+                    (pal.negative_red, t.daemon_offline)
+                };
+                let d = ui.add(
+                    egui::Button::new(RichText::new(d_txt).size(11.5).strong().color(d_col))
+                        .frame(false),
+                );
+                if d.clicked() {
+                    open_services = true;
+                }
+                aorus_tooltip(
+                    d,
+                    "Systemd Daemon (argononed.service)",
+                    t.daemon_badge_tip,
+                    Some("/lib/systemd/system/argononed.service"),
+                );
             });
         });
+        if open_services {
+            self.active_tab = ActiveTab::ServicesAndConfig;
+        }
+
+        // Compact system line; full details on hover.
+        let (short, details) = self.system_summary();
+        let board = crate::board::current();
+        let resp = ui.add(
+            egui::Label::new(RichText::new(short).size(11.0).color(uc().text_secondary))
+                .truncate()
+                .sense(Sense::hover()),
+        );
+        aorus_tooltip(
+            resp,
+            t.card_specs,
+            &format!("{details}\n\n{}", board.details()),
+            None,
+        );
     }
 
-    // =========================================================================
-    // TAB 1A: KDE COMPACT ALL-IN-ONE OVERVIEW (NO-SCROLL TELEMETRY + CONTROLS)
-    // =========================================================================
-    fn compact_fan_controls(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        let lang = self.lang;
-        let pal = self.active_palette();
-        // Column 1: Smart Fan Direct Controls
-        ui.label(
-            RichText::new(t.tab_smart_fan)
-                .size(12.5)
-                .strong()
-                .color(pal.focus_blue),
-        );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            for (lbl, spd) in [
-                (t.quick_auto, None),
-                ("0%", Some(0u8)),
-                ("35%", Some(35)),
-                ("65%", Some(65)),
-                ("100%", Some(100)),
-            ] {
-                let is_sel = self.telemetry.manual_fan_override == spd;
-                if segmented_pill(
-                    ui,
-                    lbl,
-                    is_sel,
-                    Color32::from_rgb(24, 98, 145),
-                    pal.focus_blue,
-                )
-                .clicked()
-                {
-                    self.telemetry.manual_fan_override = spd;
-                    match spd {
-                        Some(pct) => {
-                            self.manual_fan_slider = pct;
-                            let res = set_immediate_fan_speed(pct);
-                            self.log_result(&format!("Fan PWM {pct}%"), res);
-                        }
-                        None => {
-                            let res = control_argononed_service("restart");
-                            self.log_result("Fan Auto Curve", res);
-                        }
-                    }
-                }
-            }
-        });
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("compact_fan_preset")
-                .width(145.0)
-                .selected_text(self.selected_fan_preset.label(lang))
-                .show_ui(ui, |ui| {
-                    for p in [
-                        FanPreset::Silent,
-                        FanPreset::BalancedDefault,
-                        FanPreset::Performance,
-                        FanPreset::AlwaysOnTurbo,
-                    ] {
-                        if ui
-                            .selectable_label(self.selected_fan_preset == p, p.label(lang))
-                            .clicked()
-                        {
-                            self.selected_fan_preset = p;
-                            self.cpu_fan_curve = p.points();
-                        }
-                    }
-                });
-            if aorus_action_button(ui, "💾", Color32::from_rgb(18, 115, 72), pal.positive_green)
-                .on_hover_text(t.btn_save_fan_curve_tip)
-                .clicked()
-            {
-                let res = save_fan_curve(CPU_FAN_CONF, &self.cpu_fan_curve, "CPU");
-                self.log_result("Save CPU Fan Curve", res);
-            }
-        });
-    }
-    fn compact_oc_controls(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        let pal = self.active_palette();
-        // Column 2: Overclocking & Live CPUFreq Controls
-        ui.label(
-            RichText::new(t.tab_overclock)
-                .size(12.5)
-                .strong()
-                .color(pal.neutral_orange),
-        );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            for preset in [
-                OcPreset::EcoPowerSave,
-                OcPreset::StockBoost,
-                OcPreset::OcGaming,
-                OcPreset::OcExtreme,
-            ] {
-                let is_sel = self.selected_oc_preset == preset;
-                let short_lbl = preset.short_label();
-                if segmented_pill(
-                    ui,
-                    &short_lbl,
-                    is_sel,
-                    Color32::from_rgb(155, 72, 12),
-                    pal.neutral_orange,
-                )
-                .clicked()
-                {
-                    self.selected_oc_preset = preset;
-                    self.boot_oc.apply_preset(preset);
-                    self.runtime_max_mhz =
-                        self.boot_oc.arm_freq_mhz.min(self.telemetry.cpu_hw_max_mhz);
-                    self.runtime_governor = if preset == OcPreset::EcoPowerSave {
-                        "powersave".to_string()
-                    } else if preset == OcPreset::OcExtreme {
-                        "performance".to_string()
-                    } else {
-                        "schedutil".to_string()
-                    };
-                    let res = apply_runtime_cpufreq(
-                        &self.runtime_governor,
-                        self.runtime_min_mhz,
-                        self.runtime_max_mhz,
-                        self.runtime_boost,
-                    );
-                    self.log_result("1-Click CPUFreq", res);
-                }
-            }
-        });
-        ui.add_space(4.0);
-        let govs = self.telemetry.available_governors.clone();
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Gov:").size(11.5).color(pal.text_inactive));
-            egui::ComboBox::from_id_salt("compact_gov_combo")
-                .width(120.0)
-                .selected_text(&self.telemetry.cpu_governor)
-                .show_ui(ui, |ui| {
-                    for g in &govs {
-                        if ui
-                            .selectable_label(&self.telemetry.cpu_governor == g, g)
-                            .clicked()
-                        {
-                            self.runtime_governor = g.clone();
-                            let res = apply_runtime_cpufreq(
-                                g,
-                                self.telemetry.cpu_min_freq_mhz,
-                                self.telemetry.cpu_max_freq_mhz,
-                                self.telemetry.cpu_boost_enabled,
-                            );
-                            self.log_result(&format!("Governor -> {g}"), res);
-                        }
-                    }
-                });
-        });
-    }
-    fn compact_service_controls(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        let pal = self.active_palette();
-        // Column 3: Argononed Guardian & Quick Lab Access
-        ui.label(
-            RichText::new("🛡 argononed")
-                .size(12.5)
-                .strong()
-                .color(pal.positive_green),
-        );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            if aorus_action_button(
-                ui,
-                t.btn_start,
-                Color32::from_rgb(18, 115, 72),
-                pal.positive_green,
-            )
-            .on_hover_text(t.btn_start_tip)
-            .clicked()
-            {
-                let res = control_argononed_service("start");
-                self.log_result("Start argononed", res);
-                self.telemetry.last_slow_refresh = None;
-            }
-            if aorus_action_button(
-                ui,
-                t.btn_restart,
-                Color32::from_rgb(24, 98, 145),
-                pal.focus_blue,
-            )
-            .on_hover_text(t.btn_restart_tip)
-            .clicked()
-            {
-                let res = control_argononed_service("restart");
-                self.log_result("Restart argononed", res);
-                self.telemetry.last_slow_refresh = None;
-            }
-            if ui
-                .button(t.btn_stop)
-                .on_hover_text(t.btn_stop_tip)
-                .clicked()
-            {
-                let res = control_argononed_service("stop");
-                self.log_result("Stop argononed", res);
-                self.telemetry.last_slow_refresh = None;
-            }
-        });
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            if ui.small_button(t.tab_gpio_lab).clicked() {
-                self.active_tab = ActiveTab::GpioLab;
-            }
-            if ui.small_button("🛠 I2C/OLED/IR").clicked() {
-                self.active_tab = ActiveTab::Features;
-            }
-        });
-    }
-
+    // Compact dashboard, btop-style: one titled box per row (cpu, mem, net, argon), each split
+    // in two columns (meters | details and graph). Rows open the page where the value changes.
     fn draw_kde_compact_overview_tab(&mut self, ui: &mut Ui) {
+        let mut go: Option<ActiveTab> = None;
+        self.btop_cpu_box(ui, &mut go);
+        ui.add_space(10.0);
+        self.btop_mem_box(ui);
+        ui.add_space(10.0);
+        self.btop_net_box(ui);
+        ui.add_space(10.0);
+        self.btop_argon_box(ui, &mut go);
+        if let Some(tab) = go {
+            self.active_tab = tab;
+        }
+    }
+
+    fn btop_cpu_box(&self, ui: &mut Ui, go: &mut Option<ActiveTab>) {
         let t = texts(self.lang);
         let pal = self.active_palette();
-
-        // 1. Compact Donut Ring Strip (CPU | Temp | Cooler | RAM)
-        aorus_card_with_tip(
-            ui,
-            t.kde_overview_sensors_title,
-            t.tab_dashboard_tip,
-            pal.focus_blue,
-            |ui| {
-                let cpu_frac = (self.telemetry.cpu_total_usage_pct / 100.0).clamp(0.0, 1.0);
-                let cpu_val = format!("{:.1}%", self.telemetry.cpu_total_usage_pct);
-                let cpu_sub = format!(
-                    "{} MHz • {}",
-                    self.telemetry.cpu_cur_freq_mhz, self.telemetry.cpu_governor
-                );
-
-                let temp_c = self.telemetry.cpu_temp_c;
-                let temp_frac = ((temp_c - 25.0) / 60.0).clamp(0.0, 1.0);
-                let temp_col = if temp_c >= 70.0 {
-                    pal.negative_red
-                } else if temp_c >= 58.0 {
-                    pal.neutral_orange
-                } else {
-                    pal.positive_green
-                };
-                let temp_val = self.temp_unit.format_temp(temp_c);
-                let temp_sub = format!(
-                    "{}: {}",
-                    t.peak_max,
-                    self.temp_unit.format_temp(self.telemetry.max_temp_c)
-                );
-
-                let fan_pct = self.telemetry.target_fan_speed_pct;
-                let fan_frac = (fan_pct as f32 / 100.0).clamp(0.0, 1.0);
-                let fan_val = format!("{fan_pct}%");
-                let fan_sub = if self.telemetry.manual_fan_override.is_some() {
-                    t.fan_mode_manual
-                } else {
-                    t.fan_mode_auto
-                };
-
-                let ram_frac = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
-                let ram_val = format!(
-                    "{:.1} / {:.1} GB",
-                    self.telemetry.ram_used_mb as f32 / 1024.0,
-                    self.telemetry.ram_total_mb as f32 / 1024.0
-                );
-                let ram_sub = format!(
-                    "↓{:.0} ↑{:.0} KB/s",
-                    self.telemetry.net_rx_kbps, self.telemetry.net_tx_kbps
-                );
-
-                let rings: [(&str, &str, &str, f32, Color32); 4] = [
-                    (
-                        t.gauge_cpu_clock,
-                        &cpu_val,
-                        &cpu_sub,
-                        cpu_frac,
-                        pal.focus_blue,
-                    ),
-                    (t.gauge_cpu_temp, &temp_val, &temp_sub, temp_frac, temp_col),
-                    (
-                        t.gauge_fan_speed,
-                        &fan_val,
-                        fan_sub,
-                        fan_frac,
-                        Color32::from_rgb(26, 188, 156),
-                    ),
-                    (
-                        t.gauge_memory,
-                        &ram_val,
-                        &ram_sub,
-                        ram_frac,
-                        pal.visited_purple,
-                    ),
-                ];
-                // 4 rings per row on wide windows, 2 on medium, 1 on very narrow ones.
-                let w = ui.available_width();
-                let per_row = if w >= 600.0 {
-                    4
-                } else if w >= 300.0 {
-                    2
-                } else {
-                    1
-                };
-                for chunk in rings.chunks(per_row) {
-                    ui.columns(per_row, |cols| {
-                        for (col, (title, val, sub, frac, color)) in cols.iter_mut().zip(chunk) {
-                            draw_kde_donut_chart_sized(
-                                col, title, val, sub, *frac, *color, &pal, true,
-                            );
+        let tel = &self.telemetry;
+        // Both columns can request a page change.
+        let target = std::cell::Cell::new(None);
+        btop_box(ui, "cpu", pal.focus_blue, |ui| {
+            two_columns(
+                ui,
+                |ui| {
+                    let total = tel.cpu_total_usage_pct / 100.0;
+                    if gradient_meter(
+                        ui,
+                        t.g_cpu,
+                        total,
+                        &format!("{:5.1}%", tel.cpu_total_usage_pct),
+                    )
+                    .clicked()
+                    {
+                        target.set(Some(ActiveTab::Overclocking));
+                    }
+                    ui.add_space(2.0);
+                    for (name, pct) in &tel.cpu_core_usage_pct {
+                        if gradient_meter(ui, name, pct / 100.0, &format!("{pct:5.1}%")).clicked() {
+                            target.set(Some(ActiveTab::Overclocking));
                         }
-                    });
-                }
-            },
-        );
+                    }
+                },
+                |ui| {
+                    let oc = if self.boot_oc.exceeds_stock(&crate::board::current().oc) {
+                        "  OC"
+                    } else {
+                        ""
+                    };
+                    if info_row(
+                        ui,
+                        t.mt_clock,
+                        &format!("{} MHz  {}{oc}", tel.cpu_cur_freq_mhz, tel.cpu_governor),
+                        uc().text_primary,
+                        true,
+                    )
+                    .clicked()
+                    {
+                        target.set(Some(ActiveTab::Overclocking));
+                    }
+                    info_row(
+                        ui,
+                        t.mt_load,
+                        &format!(
+                            "{:.2} {:.2} {:.2}",
+                            tel.load_avg.0, tel.load_avg.1, tel.load_avg.2
+                        ),
+                        uc().text_primary,
+                        false,
+                    );
+                    info_row(
+                        ui,
+                        t.mt_uptime,
+                        &tel.format_uptime(),
+                        uc().text_primary,
+                        false,
+                    );
+                },
+            );
+        });
+        if let Some(tab) = target.get() {
+            *go = Some(tab);
+        }
+    }
 
-        ui.add_space(8.0);
-
-        // 2. Integrated Quick Control Deck (Fan + Overclock + Argononed Daemon + Hardware)
-        aorus_card_with_tip(
-            ui,
-            t.kde_compact_controls_title,
-            t.kde_compact_controls_tip,
-            pal.positive_green,
-            |ui| {
-                let w = ui.available_width();
-                if w >= 900.0 {
-                    ui.columns(3, |cols| {
-                        self.compact_fan_controls(&mut cols[0]);
-                        self.compact_oc_controls(&mut cols[1]);
-                        self.compact_service_controls(&mut cols[2]);
-                    });
-                } else if w >= 560.0 {
-                    ui.columns(2, |cols| {
-                        self.compact_fan_controls(&mut cols[0]);
-                        self.compact_oc_controls(&mut cols[1]);
-                    });
-                    ui.separator();
-                    self.compact_service_controls(ui);
-                } else {
-                    self.compact_fan_controls(ui);
-                    ui.separator();
-                    self.compact_oc_controls(ui);
-                    ui.separator();
-                    self.compact_service_controls(ui);
-                }
-            },
-        );
-
-        ui.add_space(8.0);
-
-        // 3. Compact Dual Area Charts (Thermal/CPU/Fan + Memory/Network) & Per-Core/Disk Bars
-        responsive_two_columns(
-            ui,
-            self,
-            |app, left_ui| {
-                aorus_card_with_tip(
-                    left_ui,
-                    t.kde_thermal_history_title,
-                    t.card_telemetry_tip,
-                    pal.focus_blue,
-                    |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            legend_badge(ui, t.legend_temp, pal.neutral_orange);
-                            ui.add_space(6.0);
-                            legend_badge(ui, t.legend_fan_pwm, pal.positive_green);
-                            ui.add_space(6.0);
-                            legend_badge(ui, t.legend_cpu_load, pal.focus_blue);
-                        });
-                        ui.add_space(4.0);
-                        draw_kde_area_line_chart(
+    fn btop_mem_box(&self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
+        let tel = &self.telemetry;
+        btop_box(ui, "mem", pal.visited_purple, |ui| {
+            two_columns(
+                ui,
+                |ui| {
+                    let gb = |mb: u64| mb as f32 / 1024.0;
+                    gradient_meter(
+                        ui,
+                        t.mt_mem,
+                        tel.ram_used_mb as f32 / tel.ram_total_mb.max(1) as f32,
+                        &format!("{:.1}/{:.1}G", gb(tel.ram_used_mb), gb(tel.ram_total_mb)),
+                    );
+                    gradient_meter(
+                        ui,
+                        t.mt_swap,
+                        tel.swap_used_mb as f32 / tel.swap_total_mb.max(1) as f32,
+                        &format!("{}/{}M", tel.swap_used_mb, tel.swap_total_mb),
+                    );
+                },
+                |ui| {
+                    ui.label(
+                        RichText::new(t.card_storage)
+                            .monospace()
+                            .size(11.0)
+                            .color(uc().text_secondary),
+                    );
+                    if tel.disks.is_empty() {
+                        ui.label(RichText::new(t.no_disks).monospace().size(11.0));
+                    }
+                    for d in &tel.disks {
+                        let label: String = if d.mount_point == "/" {
+                            "/".into()
+                        } else {
+                            d.mount_point
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&d.mount_point)
+                                .chars()
+                                .take(7)
+                                .collect()
+                        };
+                        gradient_meter(
                             ui,
-                            135.0,
-                            &[
-                                (&app.telemetry.cpu_history, pal.focus_blue, 100.0),
-                                (&app.telemetry.fan_history, pal.positive_green, 100.0),
-                                (&app.telemetry.temp_history, pal.neutral_orange, 100.0),
-                            ],
-                            &pal,
-                        );
-                    },
-                );
-            },
-            |app, right_ui| {
-                aorus_card(
-                    right_ui,
-                    t.kde_mem_net_history_title,
-                    pal.visited_purple,
-                    |ui| {
-                        let max_net = app
-                            .telemetry
-                            .net_rx_history
-                            .iter()
-                            .chain(app.telemetry.net_tx_history.iter())
-                            .copied()
-                            .fold(100.0_f32, f32::max);
-                        ui.horizontal_wrapped(|ui| {
-                            legend_badge(ui, "RAM (%)", pal.visited_purple);
-                            ui.add_space(6.0);
-                            legend_badge(
-                                ui,
-                                &format!("↓ RX ({:.0} KB/s)", app.telemetry.net_rx_kbps),
-                                pal.focus_blue,
-                            );
-                            ui.add_space(6.0);
-                            legend_badge(
-                                ui,
-                                &format!("↑ TX ({:.0} KB/s)", app.telemetry.net_tx_kbps),
-                                pal.positive_green,
-                            );
-                        });
-                        ui.add_space(4.0);
-                        draw_kde_area_line_chart(
-                            ui,
-                            135.0,
-                            &[
-                                (&app.telemetry.ram_history, pal.visited_purple, 100.0),
-                                (&app.telemetry.net_rx_history, pal.focus_blue, max_net),
-                                (&app.telemetry.net_tx_history, pal.positive_green, max_net),
-                            ],
-                            &pal,
-                        );
-                    },
-                );
-            },
-        );
+                            &label,
+                            d.usage_pct / 100.0,
+                            &format!("{:.0}/{:.0}G", d.used_gb, d.total_gb),
+                        )
+                        .on_hover_text(format!("{} ({})", d.mount_point, d.device));
+                    }
+                },
+            );
+        });
+    }
+
+    fn btop_net_box(&self, ui: &mut Ui) {
+        let pal = self.active_palette();
+        let tel = &self.telemetry;
+        let peak = tel
+            .net_rx_history
+            .iter()
+            .chain(tel.net_tx_history.iter())
+            .copied()
+            .fold(100.0_f32, f32::max);
+        btop_box(ui, "net", pal.positive_green, |ui| {
+            two_columns(
+                ui,
+                |ui| {
+                    gradient_meter(
+                        ui,
+                        "⬇ rx",
+                        tel.net_rx_kbps / peak,
+                        &format!("{:.1} KB/s", tel.net_rx_kbps),
+                    );
+                    gradient_meter(
+                        ui,
+                        "⬆ tx",
+                        tel.net_tx_kbps / peak,
+                        &format!("{:.1} KB/s", tel.net_tx_kbps),
+                    );
+                },
+                |ui| {
+                    info_row(ui, "IP", &tel.ip_address, uc().text_primary, false);
+                    info_row(
+                        ui,
+                        "peak",
+                        &format!("{peak:.0} KB/s"),
+                        uc().text_secondary,
+                        false,
+                    );
+                },
+            );
+        });
+    }
+
+    fn btop_argon_box(&self, ui: &mut Ui, go: &mut Option<ActiveTab>) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
+        let tel = &self.telemetry;
+        let target = std::cell::Cell::new(None);
+        btop_box(ui, "argon", pal.neutral_orange, |ui| {
+            two_columns(
+                ui,
+                |ui| {
+                    let mode = if tel.manual_fan_override.is_some() {
+                        t.fan_mode_manual
+                    } else {
+                        t.fan_mode_auto
+                    };
+                    if gradient_meter(
+                        ui,
+                        t.mt_fan,
+                        tel.target_fan_speed_pct as f32 / 100.0,
+                        &format!("{mode} {}%", tel.target_fan_speed_pct),
+                    )
+                    .clicked()
+                    {
+                        target.set(Some(ActiveTab::SmartFan));
+                    }
+                    // Temperature on a 25-85 °C scale (85 °C is the firmware limit).
+                    let temp_frac = ((tel.cpu_temp_c - 25.0) / 60.0).clamp(0.0, 1.0);
+                    if gradient_meter(
+                        ui,
+                        t.mt_temp,
+                        temp_frac,
+                        &self.temp_unit.format_temp(tel.cpu_temp_c),
+                    )
+                    .clicked()
+                    {
+                        target.set(Some(ActiveTab::SmartFan));
+                    }
+                },
+                |ui| {
+                    info_row(
+                        ui,
+                        "max",
+                        &self.temp_unit.format_temp(tel.max_temp_c),
+                        uc().text_secondary,
+                        false,
+                    );
+                    info_row(
+                        ui,
+                        t.mt_power,
+                        if tel.undervoltage_alarm {
+                            t.voltage_alert
+                        } else {
+                            t.voltage_stable
+                        },
+                        if tel.undervoltage_alarm {
+                            pal.negative_red
+                        } else {
+                            pal.positive_green
+                        },
+                        false,
+                    );
+                    if info_row(
+                        ui,
+                        t.mt_daemon,
+                        if tel.argon_service_active {
+                            t.daemon_online
+                        } else {
+                            t.daemon_offline
+                        },
+                        if tel.argon_service_active {
+                            pal.positive_green
+                        } else {
+                            pal.negative_red
+                        },
+                        true,
+                    )
+                    .clicked()
+                    {
+                        target.set(Some(ActiveTab::ServicesAndConfig));
+                    }
+                },
+            );
+        });
+        if let Some(tab) = target.get() {
+            *go = Some(tab);
+        }
     }
 
     // =========================================================================
@@ -1264,7 +1102,8 @@ impl ArgonControlCenterApp {
         let t = texts(self.lang);
         let pal = self.active_palette();
 
-        // 1. Unified KDE overview.page Donut Ring Strip (4 piechart sensors with subtle dividers)
+        // 1. Sensor rings; each ring opens its page.
+        let mut clicked_ring: Option<&str> = None;
         aorus_card_with_tip(
             ui,
             t.kde_overview_sensors_title,
@@ -1322,6 +1161,9 @@ impl ArgonControlCenterApp {
                             pal.focus_blue,
                             &pal,
                         );
+                        if r0.clicked() {
+                            clicked_ring = Some(t.gauge_cpu_clock);
+                        }
                         aorus_tooltip(
                             r0,
                             t.gauge_cpu_clock,
@@ -1338,6 +1180,9 @@ impl ArgonControlCenterApp {
                             temp_col,
                             &pal,
                         );
+                        if r1.clicked() {
+                            clicked_ring = Some(t.gauge_cpu_temp);
+                        }
                         aorus_tooltip(
                             r1,
                             t.gauge_cpu_temp,
@@ -1354,6 +1199,9 @@ impl ArgonControlCenterApp {
                             Color32::from_rgb(26, 188, 156),
                             &pal,
                         );
+                        if r2.clicked() {
+                            clicked_ring = Some(t.gauge_fan_speed);
+                        }
                         aorus_tooltip(
                             r2,
                             t.gauge_fan_speed,
@@ -1370,6 +1218,9 @@ impl ArgonControlCenterApp {
                             pal.visited_purple,
                             &pal,
                         );
+                        if r3.clicked() {
+                            clicked_ring = Some(t.gauge_memory);
+                        }
                         aorus_tooltip(
                             r3,
                             t.gauge_memory,
@@ -1379,7 +1230,7 @@ impl ArgonControlCenterApp {
                     });
                 } else {
                     ui.columns(2, |cols| {
-                        draw_kde_donut_chart(
+                        if draw_kde_donut_chart(
                             &mut cols[0],
                             t.gauge_cpu_clock,
                             &cpu_val,
@@ -1387,8 +1238,12 @@ impl ArgonControlCenterApp {
                             cpu_frac,
                             pal.focus_blue,
                             &pal,
-                        );
-                        draw_kde_donut_chart(
+                        )
+                        .clicked()
+                        {
+                            clicked_ring = Some(t.gauge_cpu_clock);
+                        }
+                        if draw_kde_donut_chart(
                             &mut cols[1],
                             t.gauge_cpu_temp,
                             &temp_val,
@@ -1396,11 +1251,15 @@ impl ArgonControlCenterApp {
                             temp_frac,
                             temp_col,
                             &pal,
-                        );
+                        )
+                        .clicked()
+                        {
+                            clicked_ring = Some(t.gauge_cpu_temp);
+                        }
                     });
                     ui.separator();
                     ui.columns(2, |cols| {
-                        draw_kde_donut_chart(
+                        if draw_kde_donut_chart(
                             &mut cols[0],
                             t.gauge_fan_speed,
                             &fan_val,
@@ -1408,8 +1267,12 @@ impl ArgonControlCenterApp {
                             fan_frac,
                             Color32::from_rgb(26, 188, 156),
                             &pal,
-                        );
-                        draw_kde_donut_chart(
+                        )
+                        .clicked()
+                        {
+                            clicked_ring = Some(t.gauge_fan_speed);
+                        }
+                        if draw_kde_donut_chart(
                             &mut cols[1],
                             t.gauge_memory,
                             &ram_val,
@@ -1417,55 +1280,85 @@ impl ArgonControlCenterApp {
                             ram_frac,
                             pal.visited_purple,
                             &pal,
-                        );
+                        )
+                        .clicked()
+                        {
+                            clicked_ring = Some(t.gauge_memory);
+                        }
                     });
                 }
             },
         );
+        if let Some(tab) = clicked_ring.and_then(|title| ring_target(self.lang, title)) {
+            self.active_tab = tab;
+        }
 
         ui.add_space(12.0);
+        self.draw_status_strip(ui);
+        ui.add_space(12.0);
 
-        // 2. KDE history.page Translucent Area Line Charts + Per-Core Bars
-        responsive_two_columns(
+        // 2. Temperature / fan / CPU history (full row)
+        aorus_card_with_tip(
             ui,
-            self,
-            |app, left_ui| {
-                aorus_card_with_tip(
-                    left_ui,
-                    t.kde_thermal_history_title,
-                    t.card_telemetry_tip,
-                    pal.focus_blue,
-                    |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            legend_badge(ui, t.legend_temp, pal.neutral_orange);
-                            ui.add_space(8.0);
-                            legend_badge(ui, t.legend_fan_pwm, pal.positive_green);
-                            ui.add_space(8.0);
-                            legend_badge(ui, t.legend_cpu_load, pal.focus_blue);
-                        });
-                        ui.add_space(6.0);
-                        draw_kde_area_line_chart(
-                            ui,
-                            185.0,
-                            &[
-                                (&app.telemetry.cpu_history, pal.focus_blue, 100.0),
-                                (&app.telemetry.fan_history, pal.positive_green, 100.0),
-                                (&app.telemetry.temp_history, pal.neutral_orange, 100.0),
-                            ],
-                            &pal,
-                        );
-                    },
+            t.kde_thermal_history_title,
+            t.card_telemetry_tip,
+            pal.focus_blue,
+            |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    legend_badge(ui, t.legend_temp, pal.neutral_orange);
+                    ui.add_space(8.0);
+                    legend_badge(ui, t.legend_fan_pwm, pal.positive_green);
+                    ui.add_space(8.0);
+                    legend_badge(ui, t.legend_cpu_load, pal.focus_blue);
+                });
+                ui.add_space(6.0);
+                draw_kde_area_line_chart(
+                    ui,
+                    185.0,
+                    &[
+                        (&self.telemetry.cpu_history, pal.focus_blue, 100.0),
+                        (&self.telemetry.fan_history, pal.positive_green, 100.0),
+                        (&self.telemetry.temp_history, pal.neutral_orange, 100.0),
+                    ],
+                    &pal,
                 );
-            },
-            |app, right_ui| {
-                app.draw_core_load_card(right_ui);
             },
         );
 
         ui.add_space(12.0);
 
-        // 3. KDE history.page Memory (%) & Network Rate (KB/s) Area Chart + Storage/Specs
-        aorus_card(ui, t.kde_mem_net_history_title, pal.visited_purple, |ui| {
+        // 3. Per-core load (full row)
+        self.draw_core_load_card(ui);
+
+        ui.add_space(12.0);
+
+        // 4. Memory history (full row)
+        aorus_card(ui, t.kde_mem_history_title, pal.visited_purple, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                legend_badge(
+                    ui,
+                    &format!(
+                        "RAM {:.1}%  ({} / {} MB)",
+                        self.telemetry.ram_usage_pct,
+                        self.telemetry.ram_used_mb,
+                        self.telemetry.ram_total_mb
+                    ),
+                    pal.visited_purple,
+                );
+            });
+            ui.add_space(6.0);
+            draw_kde_area_line_chart(
+                ui,
+                130.0,
+                &[(&self.telemetry.ram_history, pal.visited_purple, 100.0)],
+                &pal,
+            );
+        });
+
+        ui.add_space(12.0);
+
+        // 5. Network throughput history (full row), scaled to its own peak
+        aorus_card(ui, t.kde_net_history_title, pal.focus_blue, |ui| {
             let max_net = self
                 .telemetry
                 .net_rx_history
@@ -1474,26 +1367,29 @@ impl ArgonControlCenterApp {
                 .copied()
                 .fold(100.0_f32, f32::max);
             ui.horizontal_wrapped(|ui| {
-                legend_badge(ui, "RAM (%)", pal.visited_purple);
-                ui.add_space(8.0);
                 legend_badge(
                     ui,
-                    &format!("↓ Download ({:.1} KB/s)", self.telemetry.net_rx_kbps),
+                    &format!("⬇ Download {:.1} KB/s", self.telemetry.net_rx_kbps),
                     pal.focus_blue,
                 );
                 ui.add_space(8.0);
                 legend_badge(
                     ui,
-                    &format!("↑ Upload ({:.1} KB/s)", self.telemetry.net_tx_kbps),
+                    &format!("⬆ Upload {:.1} KB/s", self.telemetry.net_tx_kbps),
                     pal.positive_green,
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("max {max_net:.0} KB/s"))
+                        .size(11.0)
+                        .color(uc().text_secondary),
                 );
             });
             ui.add_space(6.0);
             draw_kde_area_line_chart(
                 ui,
-                145.0,
+                130.0,
                 &[
-                    (&self.telemetry.ram_history, pal.visited_purple, 100.0),
                     (&self.telemetry.net_rx_history, pal.focus_blue, max_net),
                     (&self.telemetry.net_tx_history, pal.positive_green, max_net),
                 ],
@@ -1503,237 +1399,225 @@ impl ArgonControlCenterApp {
 
         ui.add_space(12.0);
 
-        // 4. Storage Horizontal Bars + Hardware & Network Specs
-        responsive_two_columns(
-            ui,
-            self,
-            |app, left_ui| {
-                app.draw_storage_card(left_ui);
-            },
-            |app, right_ui| {
-                app.draw_specs_card(right_ui);
-            },
-        );
+        // 6. Storage (full row). System details live in the footer.
+        self.draw_storage_card(ui);
     }
 
     // =========================================================================
-    // TAB 1B: DASHBOARD (SAVED AORUS v1 MONITOR)
+    // TAB 1B: DASHBOARD (RADIAL GAUGES)
     // =========================================================================
+    // Gauges dashboard: radial gauges only (no charts). CPU with one gauge per core,
+    // sensors, storage and network.
     fn draw_dashboard_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        let avail_w = ui.available_width();
+        let pal = self.active_palette();
+        let tel = &self.telemetry;
+        let mut go: Option<ActiveTab> = None;
 
-        if avail_w >= 960.0 {
-            ui.columns(4, |cols| {
-                self.draw_gauge_cpu_clock(&mut cols[0]);
-                self.draw_gauge_cpu_temp(&mut cols[1]);
-                self.draw_gauge_fan(&mut cols[2]);
-                self.draw_gauge_memory(&mut cols[3]);
-            });
-        } else if avail_w >= 500.0 {
-            ui.columns(2, |cols| {
-                self.draw_gauge_cpu_clock(&mut cols[0]);
-                self.draw_gauge_cpu_temp(&mut cols[1]);
-            });
-            ui.add_space(10.0);
-            ui.columns(2, |cols| {
-                self.draw_gauge_fan(&mut cols[0]);
-                self.draw_gauge_memory(&mut cols[1]);
-            });
-        } else {
-            self.draw_gauge_cpu_clock(ui);
-            ui.add_space(8.0);
-            self.draw_gauge_cpu_temp(ui);
-            ui.add_space(8.0);
-            self.draw_gauge_fan(ui);
-            ui.add_space(8.0);
-            self.draw_gauge_memory(ui);
-        }
-
-        ui.add_space(12.0);
-
-        responsive_two_columns(
-            ui,
-            self,
-            |app, left_ui| {
-                aorus_card_with_tip(
-                    left_ui,
-                    t.card_telemetry_60s,
-                    t.card_telemetry_tip,
-                    uc().cyan,
-                    |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            legend_badge(ui, t.legend_temp, uc().cyan);
-                            ui.add_space(8.0);
-                            legend_badge(ui, t.legend_cpu_load, uc().orange);
-                            ui.add_space(8.0);
-                            legend_badge(ui, t.legend_fan_pwm, uc().green);
-                        });
-                        ui.add_space(6.0);
-                        draw_multi_telemetry_chart(
-                            ui,
-                            &app.telemetry.temp_history,
-                            &app.telemetry.cpu_history,
-                            &app.telemetry.fan_history,
-                        );
-                    },
-                );
-            },
-            |app, right_ui| {
-                app.draw_core_load_card(right_ui);
-            },
-        );
+        // CPU: total load plus one gauge per core.
+        aorus_card_with_tip(ui, t.g_cpu, t.card_core_load_tip, uc().orange, |ui| {
+            let total = tel.cpu_total_usage_pct / 100.0;
+            let big = GaugeSpec {
+                title: t.total_cpu_load.to_string(),
+                ratio: total,
+                value: format!("{:.0}", tel.cpu_total_usage_pct),
+                unit: "%".into(),
+                sub: format!("{} MHz · {}", tel.cpu_cur_freq_mhz, tel.cpu_governor),
+                color: level_color(total),
+                tip: t.card_core_load_tip,
+                tab: Some(ActiveTab::Overclocking),
+            };
+            let cores: Vec<GaugeSpec> = tel
+                .cpu_core_usage_pct
+                .iter()
+                .map(|(name, pct)| GaugeSpec {
+                    title: name.clone(),
+                    ratio: pct / 100.0,
+                    value: format!("{pct:.0}"),
+                    unit: "%".into(),
+                    sub: String::new(),
+                    color: level_color(pct / 100.0),
+                    tip: t.card_core_load_tip,
+                    tab: Some(ActiveTab::Overclocking),
+                })
+                .collect();
+            if ui.available_width() >= 620.0 {
+                ui.columns(2, |cols| {
+                    gauge_cell(&mut cols[0], &big, 170.0, &mut go);
+                    gauge_grid(&mut cols[1], &cores, 105.0, 95.0, &mut go);
+                });
+            } else {
+                gauge_cell(ui, &big, 160.0, &mut go);
+                gauge_grid(ui, &cores, 105.0, 95.0, &mut go);
+            }
+        });
 
         ui.add_space(12.0);
 
-        responsive_two_columns(
-            ui,
-            self,
-            |app, left_ui| {
-                app.draw_storage_card(left_ui);
+        // Sensors.
+        let temp_frac = ((tel.cpu_temp_c - 25.0) / 60.0).clamp(0.0, 1.0);
+        let max_clock = tel.cpu_hw_max_mhz.max(1) as f32;
+        let ram_frac = tel.ram_used_mb as f32 / tel.ram_total_mb.max(1) as f32;
+        let swap_frac = tel.swap_used_mb as f32 / tel.swap_total_mb.max(1) as f32;
+        let sensors = vec![
+            GaugeSpec {
+                title: t.gauge_cpu_clock.into(),
+                ratio: tel.cpu_cur_freq_mhz as f32 / max_clock,
+                value: tel.cpu_cur_freq_mhz.to_string(),
+                unit: "MHz".into(),
+                sub: format!("max {}", tel.cpu_hw_max_mhz),
+                color: pal.focus_blue,
+                tip: t.gauge_cpu_clock_tip,
+                tab: Some(ActiveTab::Overclocking),
             },
-            |app, right_ui| {
-                app.draw_specs_card(right_ui);
+            GaugeSpec {
+                title: t.gauge_cpu_temp.into(),
+                ratio: temp_frac,
+                value: match self.temp_unit {
+                    TempUnit::Celsius => format!("{:.1}", tel.cpu_temp_c),
+                    TempUnit::Fahrenheit => format!("{:.1}", tel.cpu_temp_c * 9.0 / 5.0 + 32.0),
+                },
+                unit: self.temp_unit.symbol().into(),
+                sub: format!("max {}", self.temp_unit.format_temp(tel.max_temp_c)),
+                color: level_color(temp_frac),
+                tip: t.gauge_cpu_temp_tip,
+                tab: Some(ActiveTab::SmartFan),
             },
-        );
-    }
-
-    fn draw_gauge_cpu_clock(&self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        aorus_card_with_tip(
-            ui,
-            t.gauge_cpu_clock,
-            t.gauge_cpu_clock_tip,
-            uc().orange,
-            |ui| {
-                let max_scale = self.telemetry.cpu_hw_max_mhz.max(2200) as f32;
-                let ratio = (self.telemetry.cpu_cur_freq_mhz as f32 / max_scale).clamp(0.0, 1.0);
-                let resp = draw_radial_gauge(
-                    ui,
-                    ratio,
-                    &format!("{}", self.telemetry.cpu_cur_freq_mhz),
-                    "MHz",
-                    &format!("GOV: {}", self.telemetry.cpu_governor.to_uppercase()),
-                    uc().orange,
-                );
-                aorus_tooltip(
-                    resp,
-                    t.gauge_cpu_clock,
-                    t.gauge_cpu_clock_tip,
-                    Some("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
-                );
-            },
-        );
-    }
-
-    fn draw_gauge_cpu_temp(&self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        let temp_color = if self.telemetry.cpu_temp_c >= 75.0 {
-            uc().red
-        } else if self.telemetry.cpu_temp_c >= 60.0 {
-            uc().amber
-        } else {
-            uc().cyan
-        };
-        aorus_card_with_tip(
-            ui,
-            t.gauge_cpu_temp,
-            t.gauge_cpu_temp_tip,
-            temp_color,
-            |ui| {
-                let ratio = ((self.telemetry.cpu_temp_c - 25.0) / 65.0).clamp(0.0, 1.0);
-                let display_val = match self.temp_unit {
-                    TempUnit::Celsius => format!("{:.1}", self.telemetry.cpu_temp_c),
-                    TempUnit::Fahrenheit => {
-                        format!("{:.1}", self.telemetry.cpu_temp_c * 9.0 / 5.0 + 32.0)
-                    }
-                };
-                let resp = draw_radial_gauge(
-                    ui,
-                    ratio,
-                    &display_val,
-                    self.temp_unit.symbol(),
-                    &format!(
-                        "{}: {}",
-                        t.peak_max,
-                        self.temp_unit.format_temp(self.telemetry.max_temp_c)
-                    ),
-                    temp_color,
-                );
-                aorus_tooltip(
-                    resp,
-                    t.gauge_cpu_temp,
-                    t.gauge_cpu_temp_tip,
-                    Some("/sys/class/thermal/thermal_zone0/temp"),
-                );
-            },
-        );
-    }
-
-    fn draw_gauge_fan(&self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        aorus_card_with_tip(
-            ui,
-            t.gauge_fan_speed,
-            t.gauge_fan_speed_tip,
-            uc().green,
-            |ui| {
-                let ratio = (self.telemetry.target_fan_speed_pct as f32 / 100.0).clamp(0.0, 1.0);
-                let mode_str = if self.telemetry.manual_fan_override.is_some() {
+            GaugeSpec {
+                title: t.gauge_fan_speed.into(),
+                ratio: tel.target_fan_speed_pct as f32 / 100.0,
+                value: tel.target_fan_speed_pct.to_string(),
+                unit: "%".into(),
+                sub: if tel.manual_fan_override.is_some() {
                     t.fan_mode_manual
                 } else {
                     t.fan_mode_auto
-                };
-                let resp = draw_radial_gauge(
-                    ui,
-                    ratio,
-                    &format!("{}", self.telemetry.target_fan_speed_pct),
-                    "% PWM",
-                    mode_str,
-                    uc().green,
-                );
-                aorus_tooltip(
-                    resp,
-                    t.gauge_fan_speed,
-                    t.gauge_fan_speed_tip,
-                    Some("/dev/i2c-1 @ 0x1a (reg 0x80)"),
-                );
+                }
+                .into(),
+                color: pal.positive_green,
+                tip: t.gauge_fan_speed_tip,
+                tab: Some(ActiveTab::SmartFan),
+            },
+            GaugeSpec {
+                title: t.gauge_memory.into(),
+                ratio: ram_frac,
+                value: format!("{:.0}", ram_frac * 100.0),
+                unit: "%".into(),
+                sub: format!(
+                    "{:.1}/{:.1} GB",
+                    tel.ram_used_mb as f32 / 1024.0,
+                    tel.ram_total_mb as f32 / 1024.0
+                ),
+                color: pal.visited_purple,
+                tip: t.gauge_memory_tip,
+                tab: None,
+            },
+            GaugeSpec {
+                title: t.g_swap.into(),
+                ratio: swap_frac,
+                value: format!("{:.0}", swap_frac * 100.0),
+                unit: "%".into(),
+                sub: format!("{}/{} MB", tel.swap_used_mb, tel.swap_total_mb),
+                color: level_color(swap_frac),
+                tip: t.gauge_memory_tip,
+                tab: None,
+            },
+        ];
+        aorus_card_with_tip(
+            ui,
+            t.kde_overview_sensors_title,
+            t.tab_dashboard_tip,
+            pal.focus_blue,
+            |ui| {
+                gauge_grid(ui, &sensors, 150.0, 150.0, &mut go);
             },
         );
-    }
 
-    fn draw_gauge_memory(&self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        aorus_card_with_tip(ui, t.gauge_memory, t.gauge_memory_tip, uc().amber, |ui| {
-            let ratio = (self.telemetry.ram_usage_pct / 100.0).clamp(0.0, 1.0);
-            let resp = draw_radial_gauge(
-                ui,
-                ratio,
-                &format!("{:.0}", self.telemetry.ram_usage_pct),
-                "% RAM",
-                &format!(
-                    "{} / {} MB",
-                    self.telemetry.ram_used_mb, self.telemetry.ram_total_mb
-                ),
-                uc().amber,
-            );
-            aorus_tooltip(
-                resp,
-                t.gauge_memory,
-                t.gauge_memory_tip,
-                Some("/proc/meminfo"),
-            );
+        ui.add_space(12.0);
+
+        // Storage: one gauge per mounted disk.
+        let disks: Vec<GaugeSpec> = tel
+            .disks
+            .iter()
+            .map(|d| GaugeSpec {
+                title: d.mount_point.clone(),
+                ratio: d.usage_pct / 100.0,
+                value: format!("{:.0}", d.usage_pct),
+                unit: "%".into(),
+                sub: format!("{:.0}/{:.0} GB", d.used_gb, d.total_gb),
+                color: level_color(d.usage_pct / 100.0),
+                tip: t.card_storage,
+                tab: None,
+            })
+            .collect();
+        if !disks.is_empty() {
+            aorus_card(ui, t.card_storage, uc().cyan, |ui| {
+                gauge_grid(ui, &disks, 140.0, 150.0, &mut go);
+            });
+            ui.add_space(12.0);
+        }
+
+        // Network: download / upload scaled to the observed peak.
+        let peak = tel
+            .net_rx_history
+            .iter()
+            .chain(tel.net_tx_history.iter())
+            .copied()
+            .fold(100.0_f32, f32::max);
+        let net = vec![
+            GaugeSpec {
+                title: t.g_download.into(),
+                ratio: tel.net_rx_kbps / peak,
+                value: format!("{:.1}", tel.net_rx_kbps),
+                unit: "KB/s".into(),
+                sub: format!("peak {peak:.0}"),
+                color: pal.focus_blue,
+                tip: t.kde_net_history_title,
+                tab: None,
+            },
+            GaugeSpec {
+                title: t.g_upload.into(),
+                ratio: tel.net_tx_kbps / peak,
+                value: format!("{:.1}", tel.net_tx_kbps),
+                unit: "KB/s".into(),
+                sub: format!("peak {peak:.0}"),
+                color: pal.positive_green,
+                tip: t.kde_net_history_title,
+                tab: None,
+            },
+        ];
+        aorus_card(ui, t.kde_net_history_title, pal.focus_blue, |ui| {
+            gauge_grid(ui, &net, 140.0, 150.0, &mut go);
         });
+
+        ui.add_space(12.0);
+        self.draw_status_strip(ui);
+
+        if let Some(tab) = go {
+            self.active_tab = tab;
+        }
     }
 
     fn draw_core_load_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
+        let pal = self.active_palette();
         aorus_card_with_tip(
             ui,
             t.card_core_load,
             t.card_core_load_tip,
             uc().orange,
             |ui| {
+                // Legend (one colour per core) + total load.
+                let colors = [
+                    pal.focus_blue,
+                    pal.positive_green,
+                    pal.neutral_orange,
+                    pal.visited_purple,
+                    pal.negative_red,
+                    uc().cyan,
+                    uc().amber,
+                    uc().text_secondary,
+                ];
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
                         RichText::new(format!(
@@ -1743,29 +1627,26 @@ impl ArgonControlCenterApp {
                         .strong()
                         .color(uc().text_primary),
                     );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let (v_txt, v_col) = if self.telemetry.undervoltage_alarm {
-                            (t.voltage_alert, uc().red)
-                        } else {
-                            (t.voltage_stable, uc().green)
-                        };
-                        let v_resp = ui.add(
-                            egui::Label::new(
-                                RichText::new(format!("{v_txt} ⓘ"))
-                                    .size(12.5)
-                                    .strong()
-                                    .color(v_col),
-                            )
-                            .sense(Sense::hover()),
-                        );
-                        aorus_tooltip(
-                            v_resp,
-                            "5V Power Rail Sensor",
-                            t.voltage_tip,
-                            Some("/sys/class/hwmon/hwmon1/in0_lcrit_alarm"),
-                        );
-                    });
+                    ui.add_space(8.0);
+                    for (i, (core_name, _)) in self.telemetry.cpu_core_usage_pct.iter().enumerate()
+                    {
+                        legend_badge(ui, core_name, colors[i % colors.len()]);
+                        ui.add_space(4.0);
+                    }
                 });
+                ui.add_space(6.0);
+
+                // History: one line per core over the last 60 s.
+                let series: Vec<(&VecDeque<f32>, Color32, f32)> = self
+                    .telemetry
+                    .core_history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| (h, colors[i % colors.len()], 100.0))
+                    .collect();
+                if !series.is_empty() {
+                    draw_kde_area_line_chart(ui, 150.0, &series, &pal);
+                }
                 ui.add_space(4.0);
 
                 for (core_name, pct) in &self.telemetry.cpu_core_usage_pct {
@@ -1780,138 +1661,93 @@ impl ArgonControlCenterApp {
                 }
 
                 ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "Load Avg: {:.2} / {:.2} / {:.2}",
-                            self.telemetry.load_avg.0,
-                            self.telemetry.load_avg.1,
-                            self.telemetry.load_avg.2
-                        ))
-                        .size(12.0)
-                        .color(uc().text_secondary),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(format!(
-                                "{}: ⬇ {:.1} KB/s   ⬆ {:.1} KB/s",
-                                t.net_label, self.telemetry.net_rx_kbps, self.telemetry.net_tx_kbps
-                            ))
-                            .size(12.0)
-                            .strong()
-                            .color(uc().cyan),
-                        );
-                    });
-                });
-
-                ui.add_space(6.0);
-
-                // Grouped Quick Control Strip (Segmented Fan Mode + Governor Selector)
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(5))
-                    .inner_margin(egui::Margin::symmetric(10, 6))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = 5.0;
-                            ui.label(
-                                RichText::new(t.quick_cooling_label)
-                                    .size(12.0)
-                                    .strong()
-                                    .color(uc().text_secondary),
-                            );
-
-                            let is_auto = self.telemetry.manual_fan_override.is_none();
-                            let r_auto =
-                                segmented_pill(ui, t.quick_auto, is_auto, uc().btn_cyan, uc().cyan);
-                            if r_auto.clicked() && !is_auto {
-                                self.telemetry.manual_fan_override = None;
-                                let res = control_argononed_service("restart");
-                                self.log_result("Auto Fan Curve", res);
-                            }
-                            aorus_tooltip(r_auto, t.quick_auto, t.quick_auto_tip, None);
-
-                            let is_off = self.telemetry.manual_fan_override == Some(0);
-                            let r_off = segmented_pill(
-                                ui,
-                                t.quick_silent,
-                                is_off,
-                                uc().btn_slate,
-                                uc().cyan,
-                            );
-                            if r_off.clicked() {
-                                self.telemetry.manual_fan_override = Some(0);
-                                let res = set_immediate_fan_speed(0);
-                                self.log_result("Fan Silent 0%", res);
-                            }
-                            aorus_tooltip(r_off, t.quick_silent, t.quick_silent_tip, None);
-
-                            let is_max = self.telemetry.manual_fan_override == Some(100);
-                            let r_max = segmented_pill(
-                                ui,
-                                t.quick_turbo,
-                                is_max,
-                                uc().btn_green,
-                                uc().green,
-                            );
-                            if r_max.clicked() {
-                                self.telemetry.manual_fan_override = Some(100);
-                                let res = set_immediate_fan_speed(100);
-                                self.log_result("Fan Turbo 100%", res);
-                            }
-                            aorus_tooltip(r_max, t.quick_turbo, t.quick_turbo_tip, None);
-
-                            ui.separator();
-
-                            let gov_lbl = ui.add(
-                                egui::Label::new(
-                                    RichText::new(format!("{} ⓘ", t.quick_gov_label))
-                                        .size(12.0)
-                                        .strong()
-                                        .color(uc().text_secondary),
-                                )
-                                .sense(Sense::hover()),
-                            );
-                            aorus_tooltip(gov_lbl, t.quick_gov_label, t.quick_gov_tip, None);
-
-                            let mut selected_gov = self.telemetry.cpu_governor.clone();
-                            let gov_options = self.telemetry.available_governors.clone();
-                            egui::ComboBox::from_id_salt("quick_gov_combo")
-                                .width(125.0)
-                                .selected_text(
-                                    RichText::new(selected_gov.to_uppercase())
-                                        .size(12.0)
-                                        .strong()
-                                        .color(uc().text_primary),
-                                )
-                                .show_ui(ui, |ui| {
-                                    for g in &gov_options {
-                                        if ui
-                                            .selectable_value(
-                                                &mut selected_gov,
-                                                g.clone(),
-                                                g.to_uppercase(),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.runtime_governor = g.clone();
-                                            let res = apply_runtime_cpufreq(
-                                                g,
-                                                self.telemetry.cpu_min_freq_mhz,
-                                                self.telemetry.cpu_hw_max_mhz,
-                                                self.runtime_boost,
-                                            );
-                                            self.log_result(&format!("Governor -> {g}"), res);
-                                            self.telemetry.refresh(&self.cpu_fan_curve);
-                                        }
-                                    }
-                                });
-                        });
-                    });
+                ui.label(
+                    RichText::new(format!(
+                        "Load Avg: {:.2} / {:.2} / {:.2}",
+                        self.telemetry.load_avg.0,
+                        self.telemetry.load_avg.1,
+                        self.telemetry.load_avg.2
+                    ))
+                    .size(12.0)
+                    .color(uc().text_secondary),
+                );
             },
         );
+    }
+
+    /// Read-only status row shared by every dashboard: fan mode, clock profile and the
+    /// argononed state. Each item opens the page where it can be changed safely.
+    fn draw_status_strip(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
+        let profile = crate::board::current().oc;
+        let fan = match self.telemetry.manual_fan_override {
+            Some(p) => format!("{}  {} · {p}%", t.tab_smart_fan, t.fan_mode_manual),
+            None => format!(
+                "{}  {} · {}%",
+                t.tab_smart_fan, t.fan_mode_auto, self.telemetry.target_fan_speed_pct
+            ),
+        };
+        let clock = format!(
+            "{}  {} · {} MHz{}",
+            t.tab_overclock,
+            self.telemetry.cpu_governor,
+            self.telemetry.cpu_max_freq_mhz,
+            if self.boot_oc.exceeds_stock(&profile) {
+                " · OC"
+            } else {
+                ""
+            }
+        );
+        let (d_txt, d_col) = if self.telemetry.argon_service_active {
+            (t.daemon_online, pal.positive_green)
+        } else {
+            (t.daemon_offline, pal.negative_red)
+        };
+        let mut go: Option<ActiveTab> = None;
+        egui::Frame::new()
+            .fill(uc().bg_subgroup)
+            .stroke(Stroke::new(1.0_f32, uc().border_subtle))
+            .corner_radius(CornerRadius::same(5))
+            .inner_margin(egui::Margin::symmetric(10, 6))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 18.0;
+                    for (text, color, tab, tip) in [
+                        (
+                            fan,
+                            uc().text_primary,
+                            ActiveTab::SmartFan,
+                            t.tab_smart_fan_tip,
+                        ),
+                        (
+                            clock,
+                            uc().text_primary,
+                            ActiveTab::Overclocking,
+                            t.tab_overclock_tip,
+                        ),
+                        (
+                            d_txt.to_string(),
+                            d_col,
+                            ActiveTab::ServicesAndConfig,
+                            t.daemon_badge_tip,
+                        ),
+                    ] {
+                        let resp = ui.add(
+                            egui::Button::new(RichText::new(text).size(12.5).strong().color(color))
+                                .frame(false),
+                        );
+                        if resp.clicked() {
+                            go = Some(tab);
+                        }
+                        resp.on_hover_text(tip);
+                    }
+                });
+            });
+        if let Some(tab) = go {
+            self.active_tab = tab;
+        }
     }
 
     fn draw_storage_card(&self, ui: &mut Ui) {
@@ -1954,60 +1790,54 @@ impl ArgonControlCenterApp {
         });
     }
 
-    fn draw_specs_card(&self, ui: &mut Ui) {
+    /// System summary for the footer: one compact line plus the full details for its tooltip.
+    fn system_summary(&self) -> (String, String) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_specs, uc().amber, |ui| {
-            egui::Grid::new("sys_specs_grid")
-                .num_columns(2)
-                .spacing([16.0, 7.0])
-                .show(ui, |ui| {
-                    spec_row(ui, t.spec_board, &self.telemetry.board_model);
-                    let board = crate::board::current();
-                    spec_row(
-                        ui,
-                        t.spec_soc,
-                        &format!(
-                            "{} · {}",
-                            board.soc.name(),
-                            board
-                                .ram_mb
-                                .map(|m| format!("{} GB", m / 1024))
-                                .unwrap_or_else(|| "—".into())
-                        ),
-                    );
-                    spec_row(ui, t.spec_case, board.case.name());
-                    spec_row(ui, t.spec_os, &self.telemetry.os_name);
-                    spec_row(ui, t.spec_kernel, &self.telemetry.kernel_version);
-                    spec_row(
-                        ui,
-                        t.spec_cpu_scale,
-                        &format!(
-                            "{} – {} MHz (HW Max: {} MHz)",
-                            self.telemetry.cpu_min_freq_mhz,
-                            self.telemetry.cpu_max_freq_mhz,
-                            self.telemetry.cpu_hw_max_mhz
-                        ),
-                    );
-                    spec_row(
-                        ui,
-                        t.spec_swap,
-                        &format!(
-                            "{} / {} MB",
-                            self.telemetry.swap_used_mb, self.telemetry.swap_total_mb
-                        ),
-                    );
-                    spec_row(
-                        ui,
-                        t.spec_boot_oc,
-                        &format!(
-                            "ARM {} MHz | GPU {} MHz | OV {}",
-                            self.boot_oc.arm_freq_mhz,
-                            self.boot_oc.gpu_freq_mhz,
-                            self.boot_oc.over_voltage
-                        ),
-                    );
-                });
-        });
+        let board = crate::board::current();
+        let tel = &self.telemetry;
+        let short = format!(
+            "{}  ·  {}  ·  Linux {}  ·  CPU {}–{} MHz  ·  Boot {} MHz",
+            board.summary(),
+            tel.os_name,
+            tel.kernel_version,
+            tel.cpu_min_freq_mhz,
+            tel.cpu_max_freq_mhz,
+            self.boot_oc.arm_freq_mhz
+        );
+        let ram = board
+            .ram_mb
+            .map(|m| format!("{} GB", m / 1024))
+            .unwrap_or_else(|| "—".into());
+        let details = [
+            (t.spec_board, tel.board_model.clone()),
+            (t.spec_soc, format!("{} · {ram}", board.soc.name())),
+            (t.spec_case, board.case.name().to_string()),
+            (t.spec_os, tel.os_name.clone()),
+            (t.spec_kernel, tel.kernel_version.clone()),
+            (
+                t.spec_cpu_scale,
+                format!(
+                    "{} – {} MHz (HW max {} MHz)",
+                    tel.cpu_min_freq_mhz, tel.cpu_max_freq_mhz, tel.cpu_hw_max_mhz
+                ),
+            ),
+            (
+                t.spec_swap,
+                format!("{} / {} MB", tel.swap_used_mb, tel.swap_total_mb),
+            ),
+            (
+                t.spec_boot_oc,
+                format!(
+                    "ARM {} MHz · GPU {} MHz · OV {}",
+                    self.boot_oc.arm_freq_mhz, self.boot_oc.gpu_freq_mhz, self.boot_oc.over_voltage
+                ),
+            ),
+        ]
+        .iter()
+        .map(|(k, v)| format!("{k} {v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+        (short, details)
     }
 
     // =========================================================================
@@ -2170,18 +2000,29 @@ impl ArgonControlCenterApp {
         ui.add_space(12.0);
         aorus_card_with_tip(ui, t.set_about, t.set_about_tip, uc().amber, |ui| {
             let board = crate::board::current();
-            egui::Grid::new("settings_about_grid")
-                .num_columns(2)
-                .spacing([14.0, 6.0])
-                .show(ui, |ui| {
-                    spec_row(ui, t.set_version, env!("CARGO_PKG_VERSION"));
-                    spec_row(ui, t.set_hardware, &board.summary());
-                    spec_row(ui, t.set_color_source, &self.kde_palette.describe());
-                    let path = crate::settings::path()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "—".into());
-                    spec_row(ui, t.set_settings_file, &path);
-                });
+            let path = crate::settings::path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "—".into());
+            for (key, value) in [
+                (t.set_version, env!("CARGO_PKG_VERSION").to_string()),
+                (t.set_hardware, board.summary()),
+                (t.set_color_source, self.kde_palette.describe()),
+                (t.set_settings_file, path),
+                (t.set_credits, crate::pinout::CREDIT.to_string()),
+            ] {
+                // Key and value stacked so long values (paths) wrap instead of widening the page.
+                ui.label(RichText::new(key).size(11.5).color(uc().text_secondary));
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(value)
+                            .size(12.5)
+                            .strong()
+                            .color(uc().text_primary),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(4.0);
+            }
             ui.add_space(8.0);
             if ui
                 .button(RichText::new(t.set_reset).strong())
@@ -2289,7 +2130,7 @@ impl ArgonControlCenterApp {
                     let current_eval = evaluate_fan_speed(app.telemetry.cpu_temp_c, active_curve);
                     ui.label(
                         RichText::new(format!(
-                            "🌡 {:.1} °C  ➡  {}: {}% PWM",
+                            "{:.1} °C  ➡  {}: {}% PWM",
                             app.telemetry.cpu_temp_c, t.cur_temp_to_curve, current_eval
                         ))
                         .size(13.5)
@@ -2483,7 +2324,7 @@ impl ArgonControlCenterApp {
                                                 idx + 1
                                             ))
                                             .strong()
-                                            .color(uc().amber),
+                                            .color(uc().heading),
                                         );
                                         if ui
                                             .add(
@@ -2647,7 +2488,7 @@ impl ArgonControlCenterApp {
     }
 
     // =========================================================================
-    // TAB 3: OVERCLOCKING (AORUS ENGINE — ALIGNED GRID + TOOLTIPS)
+    // TAB 3: OVERCLOCKING (PRESETS, LIVE CPUFREQ, FIRMWARE, STABILITY)
     // =========================================================================
     fn draw_overclocking_tab(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
@@ -3258,7 +3099,7 @@ impl ArgonControlCenterApp {
                                         ))
                                         .size(12.0)
                                         .strong()
-                                        .color(uc().amber),
+                                        .color(uc().heading),
                                     );
                                 });
                                 ui.end_row();
@@ -3337,7 +3178,7 @@ impl ArgonControlCenterApp {
             ui.add_space(6.0);
 
             // Group 1: GPIO Buses
-            section_group_header(ui, t.group_buses, uc().amber);
+            section_group_header(ui, t.group_buses, uc().heading);
             feature_toggle_row(
                 ui,
                 t.feat_i2c_title,
@@ -3442,7 +3283,7 @@ impl ArgonControlCenterApp {
 
             // Group 1: OLED Configuration
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(t.oled_section).strong().color(uc().amber))
+                ui.label(RichText::new(t.oled_section).strong().color(uc().heading))
                     .on_hover_text("/etc/argoneonoled.conf");
                 let badge = if self.oled_hw_present {
                     (t.oled_installed_badge, uc().green)
@@ -3868,6 +3709,125 @@ impl ArgonControlCenterApp {
         );
     }
 
+    /// Draws the 40-pin diagram with live GPIO states on top. Returns false when the diagram
+    /// could not be rendered (the caller then shows the list view).
+    fn draw_pinout_diagram(&mut self, ui: &mut Ui) -> bool {
+        let t = texts(self.lang);
+        if self.pinout.is_none() {
+            if self.pinout_rx.is_some() {
+                // Still rendering on the start-up thread: show a short placeholder.
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(t.gpio_diagram_loading).color(uc().text_secondary));
+                });
+                ui.ctx().request_repaint_after(Duration::from_millis(100));
+                return true;
+            }
+            // Fallback (pre-render thread failed to start): render now.
+            self.pinout = Some(PinoutTexture::from_render(
+                ui.ctx(),
+                crate::pinout::render(900),
+            ));
+        }
+        let Some(diagram) = self.pinout.as_ref() else {
+            return false;
+        };
+        let Some(texture) = diagram.texture.as_ref() else {
+            return false;
+        };
+
+        let w = ui.available_width().min(620.0);
+        let size = Vec2::new(w, w * diagram.aspect);
+        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.image(
+            texture.id(),
+            rect,
+            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+            Color32::WHITE,
+        );
+
+        let pins = diagram.pins;
+        let mut clicked: Option<u8> = None;
+        for (i, def) in RPI_40PIN_HEADER.iter().enumerate() {
+            let HeaderPinKind::Gpio(bcm) = def.kind else {
+                continue;
+            };
+            let b = pins[i];
+            let pin_rect = Rect::from_min_max(
+                Pos2::new(rect.left() + b[0] * size.x, rect.top() + b[1] * size.y),
+                Pos2::new(rect.left() + b[2] * size.x, rect.top() + b[3] * size.y),
+            );
+            let Some(state) = self.gpio_lab.pins.get(bcm as usize) else {
+                continue;
+            };
+            let fill = if state.level_high {
+                Color32::from_rgb(30, 170, 90)
+            } else {
+                Color32::from_rgb(52, 56, 64)
+            };
+            painter.rect_filled(pin_rect, CornerRadius::same(3), fill);
+            painter.text(
+                pin_rect.center(),
+                Align2::CENTER_CENTER,
+                def.phys_num.to_string(),
+                FontId::new(
+                    (pin_rect.height() * 0.55).clamp(8.0, 16.0),
+                    FontFamily::Proportional,
+                ),
+                Color32::WHITE,
+            );
+            if self.gpio_lab.selected_bcm == bcm {
+                painter.rect_stroke(
+                    pin_rect.expand(2.0),
+                    CornerRadius::same(4),
+                    Stroke::new(2.5_f32, uc().orange),
+                    StrokeKind::Outside,
+                );
+            }
+            let resp = ui.interact(pin_rect, ui.id().with(("pinout-pin", bcm)), Sense::click());
+            if resp.clicked() {
+                clicked = Some(bcm);
+            }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            let tip = format!(
+                "{}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ⬆ {} rising | ⬇ {} falling",
+                state.role_note,
+                state.direction.short_label(),
+                state.pull.short_label(),
+                if state.level_high { "HIGH (3.3V)" } else { "LOW (0.0V)" },
+                state.rising_edges,
+                state.falling_edges
+            );
+            aorus_tooltip(
+                resp,
+                &format!("Physical pin #{} — GPIO {}", def.phys_num, bcm),
+                &tip,
+                Some(&format!("pinctrl get {bcm}")),
+            );
+        }
+        if let Some(bcm) = clicked {
+            self.gpio_lab.selected_bcm = bcm;
+        }
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new("■ HIGH")
+                    .color(Color32::from_rgb(30, 170, 90))
+                    .strong(),
+            );
+            ui.label(RichText::new("■ LOW").color(uc().text_secondary).strong());
+            ui.label(
+                RichText::new(t.gpio_diagram_hint)
+                    .size(11.5)
+                    .color(uc().text_secondary),
+            );
+        });
+        true
+    }
+
     fn draw_gpio_header_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
         aorus_card_with_tip(
@@ -3931,43 +3891,65 @@ impl ArgonControlCenterApp {
 
                 ui.add_space(6.0);
 
+                // View switch: annotated diagram (default) or the compact list.
+                ui.horizontal_wrapped(|ui| {
+                    for (diagram, label) in [(true, t.gpio_view_diagram), (false, t.gpio_view_list)]
+                    {
+                        if segmented_pill(
+                            ui,
+                            label,
+                            self.gpio_view_diagram == diagram,
+                            uc().btn_cyan,
+                            uc().cyan,
+                        )
+                        .clicked()
+                        {
+                            self.gpio_view_diagram = diagram;
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+                let diagram_shown = self.gpio_view_diagram && self.draw_pinout_diagram(ui);
+
                 // Interactive 40-Pin Raspberry Pi Physical Header (20 rows x 2 columns)
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(6))
-                    .inner_margin(egui::Margin::symmetric(8, 6))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        egui::ScrollArea::vertical()
-                            .id_salt("rpi_40pin_scroll")
-                            .max_height(315.0)
-                            .show(ui, |ui| {
-                                // Two columns mirror the physical header; narrow windows
-                                // list the pins 1..40 in a single column instead.
-                                let two_cols = ui.available_width() >= 2.0 * 210.0 + 30.0;
-                                egui::Grid::new("rpi_40pin_grid")
-                                    .num_columns(if two_cols { 2 } else { 1 })
-                                    .spacing([10.0, 4.0])
-                                    .striped(true)
-                                    .show(ui, |ui| {
-                                        if two_cols {
-                                            for row in 0..20 {
-                                                let odd_pin = &RPI_40PIN_HEADER[row * 2];
-                                                let even_pin = &RPI_40PIN_HEADER[row * 2 + 1];
-                                                self.draw_single_header_pin(ui, odd_pin, false);
-                                                self.draw_single_header_pin(ui, even_pin, true);
-                                                ui.end_row();
+                if !diagram_shown {
+                    egui::Frame::new()
+                        .fill(uc().bg_subgroup)
+                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(egui::Margin::symmetric(8, 6))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            egui::ScrollArea::vertical()
+                                .id_salt("rpi_40pin_scroll")
+                                .max_height(315.0)
+                                .show(ui, |ui| {
+                                    // Two columns mirror the physical header; narrow windows
+                                    // list the pins 1..40 in a single column instead.
+                                    let two_cols = ui.available_width() >= 2.0 * 210.0 + 30.0;
+                                    egui::Grid::new("rpi_40pin_grid")
+                                        .num_columns(if two_cols { 2 } else { 1 })
+                                        .spacing([10.0, 4.0])
+                                        .striped(true)
+                                        .show(ui, |ui| {
+                                            if two_cols {
+                                                for row in 0..20 {
+                                                    let odd_pin = &RPI_40PIN_HEADER[row * 2];
+                                                    let even_pin = &RPI_40PIN_HEADER[row * 2 + 1];
+                                                    self.draw_single_header_pin(ui, odd_pin, false);
+                                                    self.draw_single_header_pin(ui, even_pin, true);
+                                                    ui.end_row();
+                                                }
+                                            } else {
+                                                for pin in RPI_40PIN_HEADER.iter() {
+                                                    self.draw_single_header_pin(ui, pin, false);
+                                                    ui.end_row();
+                                                }
                                             }
-                                        } else {
-                                            for pin in RPI_40PIN_HEADER.iter() {
-                                                self.draw_single_header_pin(ui, pin, false);
-                                                ui.end_row();
-                                            }
-                                        }
-                                    });
-                            });
-                    });
+                                        });
+                                });
+                        });
+                }
 
                 ui.add_space(8.0);
 
@@ -3989,7 +3971,7 @@ impl ArgonControlCenterApp {
                                     ))
                                     .size(12.5)
                                     .strong()
-                                    .color(uc().amber),
+                                    .color(uc().heading),
                                 );
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
@@ -4006,7 +3988,7 @@ impl ArgonControlCenterApp {
                                         };
                                         ui.label(
                                             RichText::new(format!(
-                                                "[{} | {}] {}  (↑{} ↓{})",
+                                                "[{} | {}] {}  (⬆{} ⬇{})",
                                                 pin.direction.short_label(),
                                                 pin.pull.short_label(),
                                                 lvl_str,
@@ -4096,7 +4078,7 @@ impl ArgonControlCenterApp {
                 );
             }
             HeaderPinKind::Ground => {
-                let txt = format!("#{:02}  ⏚ {}", def.phys_num, def.label);
+                let txt = format!("#{:02}  {}", def.phys_num, def.label);
                 ui.label(
                     RichText::new(txt)
                         .monospace()
@@ -4126,7 +4108,7 @@ impl ArgonControlCenterApp {
                     })
                     .unwrap_or(("IN", "NP", false, "", 0, 0));
 
-                let led = if high { "🟢 1" } else { "⚫ 0" };
+                let led = if high { "⏺ 1" } else { "○ 0" };
                 let btn_txt = if right_side {
                     // Mirrored so the physical pin number sits next to the header, like the board.
                     format!(
@@ -4171,7 +4153,7 @@ impl ArgonControlCenterApp {
                     self.gpio_lab.selected_bcm = bcm;
                 }
                 let tip_desc = format!(
-                    "Function: {}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ↑ {} rising | ↓ {} falling",
+                    "Function: {}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ⬆ {} rising | ⬇ {} falling",
                     role,
                     dir_str,
                     pull_str,
@@ -4530,7 +4512,7 @@ fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
         painter.text(
             Pos2::new(rect.left() + 8.0, y_top + 24.0),
             Align2::LEFT_CENTER,
-            format!("{} ↑{} ↓{}", state_txt, pin.rising_edges, pin.falling_edges),
+            format!("{} ⬆{} ⬇{}", state_txt, pin.rising_edges, pin.falling_edges),
             FontId::new(10.5, FontFamily::Monospace),
             trace_color,
         );
@@ -4565,7 +4547,7 @@ fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
 // RESPONSIVE LAYOUT, RICH TOOLTIPS & SEGMENTED WIDGET HELPERS
 // =============================================================================
 
-/// Attaches a styled Gigabyte AORUS rich tooltip card with title, explanation, and optional Linux/hardware path.
+/// Attaches a rich tooltip with title, explanation and an optional Linux/hardware path.
 fn aorus_tooltip(
     resp: Response,
     title: &str,
@@ -4578,7 +4560,7 @@ fn aorus_tooltip(
             let (bar, _) = ui.allocate_exact_size(Vec2::new(3.0, 14.0), Sense::hover());
             ui.painter()
                 .rect_filled(bar, CornerRadius::same(1), uc().orange);
-            ui.label(RichText::new(title).size(13.0).strong().color(uc().amber));
+            ui.label(RichText::new(title).size(13.0).strong().color(uc().heading));
         });
         ui.add_space(3.0);
         ui.label(
@@ -4603,7 +4585,7 @@ fn aorus_tooltip(
 fn label_with_tip(ui: &mut Ui, label: &str, tip: &str, tech_path: Option<&str>) {
     let resp = ui.add(
         egui::Label::new(
-            RichText::new(format!("{label} ⓘ"))
+            RichText::new(label.to_string())
                 .size(13.0)
                 .strong()
                 .color(uc().text_primary),
@@ -4818,7 +4800,7 @@ fn aorus_card_with_tip(
                     .rect_filled(bar_rect, CornerRadius::same(2), bar_col);
                 let resp = ui.add(
                     egui::Label::new(
-                        RichText::new(format!("{title} ⓘ"))
+                        RichText::new(title.to_string())
                             .size(13.5)
                             .strong()
                             .color(uc().text_primary),
@@ -4838,20 +4820,24 @@ fn aorus_card_with_tip(
         });
 }
 
+/// Radial gauge `height` pixels tall; radius, stroke and fonts scale with it. Clickable.
 fn draw_radial_gauge(
     ui: &mut Ui,
+    height: f32,
     ratio: f32,
     main_value: &str,
     unit_label: &str,
     sub_label: &str,
     accent: Color32,
 ) -> Response {
-    let desired = Vec2::new(ui.available_width(), 160.0);
-    let (rect, resp) = ui.allocate_exact_size(desired, Sense::hover());
+    let desired = Vec2::new(ui.available_width(), height);
+    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
     let painter = ui.painter_at(rect);
 
     let center = rect.center() + Vec2::new(0.0, 4.0);
-    let radius = (rect.height().min(rect.width()) * 0.39).clamp(38.0, 58.0);
+    let radius = (rect.height().min(rect.width()) * 0.39).clamp(18.0, 58.0);
+    let k = radius / 58.0;
+    let stroke_w = (9.0 * k).max(4.0);
 
     let start_angle = 0.75 * PI;
     let sweep = 1.5 * PI;
@@ -4862,7 +4848,7 @@ fn draw_radial_gauge(
         radius,
         start_angle,
         sweep,
-        Stroke::new(9.0_f32, gauge_track()),
+        Stroke::new(stroke_w, gauge_track()),
     );
 
     let ticks = 18;
@@ -4870,8 +4856,8 @@ fn draw_radial_gauge(
         let t = i as f32 / ticks as f32;
         let ang = start_angle + t * sweep;
         let dir = Vec2::new(ang.cos(), ang.sin());
-        let p1 = center + dir * (radius + 8.0);
-        let p2 = center + dir * (radius + 12.0);
+        let p1 = center + dir * (radius + 8.0 * k);
+        let p2 = center + dir * (radius + 12.0 * k);
         let tick_col = if t <= ratio { accent } else { gauge_tick() };
         painter.line_segment([p1, p2], Stroke::new(1.5_f32, tick_col));
     }
@@ -4883,22 +4869,22 @@ fn draw_radial_gauge(
             radius,
             start_angle,
             sweep * ratio.clamp(0.0, 1.0),
-            Stroke::new(9.0_f32, accent),
+            Stroke::new(stroke_w, accent),
         );
     }
 
     painter.text(
-        center + Vec2::new(0.0, -6.0),
+        center + Vec2::new(0.0, -6.0 * k),
         Align2::CENTER_CENTER,
         main_value,
-        FontId::new(24.0, FontFamily::Proportional),
+        FontId::new((24.0 * k).max(11.0), FontFamily::Proportional),
         uc().text_primary,
     );
     painter.text(
-        center + Vec2::new(0.0, 15.0),
+        center + Vec2::new(0.0, 15.0 * k),
         Align2::CENTER_CENTER,
         unit_label,
-        FontId::new(12.5, FontFamily::Proportional),
+        FontId::new((12.5 * k).max(9.0), FontFamily::Proportional),
         accent,
     );
 
@@ -4906,7 +4892,7 @@ fn draw_radial_gauge(
         Pos2::new(center.x, rect.bottom() - 7.0),
         Align2::CENTER_CENTER,
         sub_label,
-        FontId::new(12.0, FontFamily::Proportional),
+        FontId::new((12.0 * k).max(9.0), FontFamily::Proportional),
         uc().text_secondary,
     );
 
@@ -4928,67 +4914,6 @@ fn draw_arc(
         pts.push(center + Vec2::new(a.cos() * radius, a.sin() * radius));
     }
     painter.add(Shape::line(pts, stroke));
-}
-
-fn draw_multi_telemetry_chart(
-    ui: &mut Ui,
-    temp_hist: &VecDeque<f32>,
-    cpu_hist: &VecDeque<f32>,
-    fan_hist: &VecDeque<f32>,
-) {
-    let desired = Vec2::new(ui.available_width(), 195.0);
-    let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    painter.rect_filled(rect, CornerRadius::same(4), uc().bg_subgroup);
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(4),
-        Stroke::new(1.0_f32, uc().border_subtle),
-        StrokeKind::Inside,
-    );
-
-    let plot_rect = rect.shrink2(Vec2::new(36.0, 14.0));
-
-    for i in 0..=4 {
-        let frac = i as f32 / 4.0;
-        let y = plot_rect.bottom() - frac * plot_rect.height();
-        painter.line_segment(
-            [
-                Pos2::new(plot_rect.left(), y),
-                Pos2::new(plot_rect.right(), y),
-            ],
-            Stroke::new(1.0_f32, chart_grid()),
-        );
-        painter.text(
-            Pos2::new(plot_rect.left() - 6.0, y),
-            Align2::RIGHT_CENTER,
-            format!("{}", i * 25),
-            FontId::new(11.0, FontFamily::Monospace),
-            uc().text_secondary,
-        );
-    }
-
-    let plot_series = |hist: &VecDeque<f32>, color: Color32| {
-        if hist.len() < 2 {
-            return;
-        }
-        let n = hist.len();
-        let pts: Vec<Pos2> = hist
-            .iter()
-            .enumerate()
-            .map(|(i, &val)| {
-                let x = plot_rect.left() + (i as f32 / (n - 1) as f32) * plot_rect.width();
-                let y = plot_rect.bottom() - (val.clamp(0.0, 100.0) / 100.0) * plot_rect.height();
-                Pos2::new(x, y)
-            })
-            .collect();
-        painter.add(Shape::line(pts, Stroke::new(2.2_f32, color)));
-    };
-
-    plot_series(fan_hist, uc().green);
-    plot_series(cpu_hist, uc().orange);
-    plot_series(temp_hist, uc().cyan);
 }
 
 fn draw_interactive_fan_curve(
@@ -5323,17 +5248,10 @@ fn choice_row<T: Copy + PartialEq>(
                     .corner_radius(CornerRadius::same(5))
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
-                        ui.set_width(card_w - 22.0);
+                        // Card width minus inner margin (2 x 10) and stroke (2 x 1.5).
+                        ui.set_width((card_w - 24.0).max(40.0));
                         ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(if selected { "●" } else { "○" })
-                                    .size(13.0)
-                                    .color(if selected {
-                                        uc().cyan
-                                    } else {
-                                        uc().text_secondary
-                                    }),
-                            );
+                            radio_dot(ui, selected);
                             ui.label(
                                 RichText::new(*title)
                                     .size(13.0)
@@ -5357,4 +5275,273 @@ fn choice_row<T: Copy + PartialEq>(
         ui.add_space(gap);
     }
     changed
+}
+
+/// Rendered pin-out diagram kept as a GPU texture. The rasterization (font loading + SVG)
+/// runs on a background thread at start-up, so opening the GPIO lab is instant.
+struct PinoutTexture {
+    texture: Option<egui::TextureHandle>,
+    aspect: f32,
+    pins: [[f32; 4]; 40],
+}
+
+impl PinoutTexture {
+    fn from_render(ctx: &egui::Context, rendered: Option<crate::pinout::Pinout>) -> Self {
+        match rendered {
+            Some(p) => PinoutTexture {
+                texture: Some(ctx.load_texture(
+                    "gpio-pinout",
+                    egui::ColorImage::from_rgba_premultiplied(
+                        [p.width as usize, p.height as usize],
+                        &p.rgba,
+                    ),
+                    egui::TextureOptions::LINEAR,
+                )),
+                aspect: p.height as f32 / p.width as f32,
+                pins: p.pins,
+            },
+            None => PinoutTexture {
+                texture: None,
+                aspect: 1.0,
+                pins: [[0.0; 4]; 40],
+            },
+        }
+    }
+}
+
+/// Radio-button marker drawn with shapes (font independent).
+fn radio_dot(ui: &mut Ui, selected: bool) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    let c = rect.center();
+    let ring = if selected {
+        uc().cyan
+    } else {
+        uc().text_secondary
+    };
+    ui.painter()
+        .circle_stroke(c, 6.0, Stroke::new(1.5_f32, ring));
+    if selected {
+        ui.painter().circle_filled(c, 3.5, uc().cyan);
+    }
+}
+
+/// Page opened by clicking a dashboard ring (memory has no settings page).
+fn ring_target(lang: Language, title: &str) -> Option<ActiveTab> {
+    let t = texts(lang);
+    if title == t.gauge_cpu_clock {
+        Some(ActiveTab::Overclocking)
+    } else if title == t.gauge_cpu_temp || title == t.gauge_fan_speed {
+        Some(ActiveTab::SmartFan)
+    } else {
+        None
+    }
+}
+
+/// One radial gauge with its title, tooltip and optional page link.
+struct GaugeSpec {
+    title: String,
+    ratio: f32,
+    value: String,
+    unit: String,
+    sub: String,
+    color: Color32,
+    tip: &'static str,
+    tab: Option<ActiveTab>,
+}
+
+fn gauge_cell(ui: &mut Ui, g: &GaugeSpec, height: f32, go: &mut Option<ActiveTab>) {
+    ui.vertical_centered(|ui| {
+        ui.label(
+            RichText::new(&g.title)
+                .size(12.0)
+                .strong()
+                .color(uc().heading),
+        );
+    });
+    let resp = draw_radial_gauge(
+        ui,
+        height,
+        g.ratio.clamp(0.0, 1.0),
+        &g.value,
+        &g.unit,
+        &g.sub,
+        g.color,
+    );
+    if g.tab.is_some() && resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if resp.clicked() {
+        if let Some(tab) = g.tab {
+            *go = Some(tab);
+        }
+    }
+    resp.on_hover_text(g.tip);
+}
+
+/// Gauges laid out in rows; as many per row as fit at `min_w` pixels each.
+fn gauge_grid(
+    ui: &mut Ui,
+    items: &[GaugeSpec],
+    height: f32,
+    min_w: f32,
+    go: &mut Option<ActiveTab>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let per_row = ((ui.available_width() / min_w).floor() as usize).clamp(1, items.len());
+    for chunk in items.chunks(per_row) {
+        ui.columns(per_row, |cols| {
+            for (col, g) in cols.iter_mut().zip(chunk) {
+                gauge_cell(col, g, height, go);
+            }
+        });
+    }
+}
+
+/// Green below 60 %, amber below 85 %, red above.
+fn level_color(frac: f32) -> Color32 {
+    if frac < 0.6 {
+        uc().green
+    } else if frac < 0.85 {
+        uc().amber
+    } else {
+        uc().red
+    }
+}
+
+/// btop-style meter: `label  ■■■■■■■□□□□□  value`. The bar is made of blocks filled from left
+/// to right (0 -> 100 %); each block takes its colour from a green -> amber -> red gradient
+/// according to its position, so the fill shows where the value sits on the scale.
+fn gradient_meter(ui: &mut Ui, label: &str, frac: f32, value: &str) -> Response {
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 17.0), Sense::click());
+    let p = ui.painter_at(rect);
+    let mono = FontId::monospace(11.5);
+    let label_w = 58.0;
+    let value_w = (w * 0.30).clamp(66.0, 120.0);
+    p.text(
+        Pos2::new(rect.left(), rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        mono.clone(),
+        uc().heading,
+    );
+    let bar = Rect::from_min_max(
+        Pos2::new(rect.left() + label_w, rect.top() + 4.0),
+        Pos2::new(
+            (rect.right() - value_w - 6.0).max(rect.left() + label_w + 12.0),
+            rect.bottom() - 4.0,
+        ),
+    );
+    let (block, gap) = (4.0, 1.5);
+    let n = ((bar.width() + gap) / (block + gap)).floor().max(1.0) as usize;
+    let filled = (frac.clamp(0.0, 1.0) * n as f32).round() as usize;
+    let track = crate::system_colors::mix(uc().bg_subgroup, uc().text_secondary, 0.18);
+    for i in 0..n {
+        let x = bar.left() + i as f32 * (block + gap);
+        let r = Rect::from_min_size(Pos2::new(x, bar.top()), Vec2::new(block, bar.height()));
+        let color = if i < filled {
+            gradient_color(i as f32 / n.max(2).saturating_sub(1) as f32)
+        } else {
+            track
+        };
+        p.rect_filled(r, CornerRadius::same(1), color);
+    }
+    p.text(
+        Pos2::new(rect.right(), rect.center().y),
+        Align2::RIGHT_CENTER,
+        value,
+        mono,
+        uc().text_primary,
+    );
+    resp
+}
+
+/// green (0) -> amber (0.5) -> red (1).
+fn gradient_color(pos: f32) -> Color32 {
+    let pos = pos.clamp(0.0, 1.0);
+    if pos < 0.5 {
+        crate::system_colors::mix(uc().green, uc().amber, pos * 2.0)
+    } else {
+        crate::system_colors::mix(uc().amber, uc().red, (pos - 0.5) * 2.0)
+    }
+}
+
+/// btop-style box: rounded border with the title set into the top edge.
+fn btop_box(ui: &mut Ui, title: &str, accent: Color32, add_contents: impl FnOnce(&mut Ui)) {
+    let bg = ui.visuals().panel_fill;
+    let resp = egui::Frame::new()
+        .stroke(Stroke::new(1.2_f32, accent))
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(egui::Margin {
+            left: 10,
+            right: 10,
+            top: 12,
+            bottom: 8,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add_contents(ui);
+        })
+        .response;
+    let font = FontId::monospace(12.0);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(format!(" {title} "), font, accent);
+    let pos = Pos2::new(
+        resp.rect.left() + 12.0,
+        resp.rect.top() - galley.size().y / 2.0,
+    );
+    ui.painter().rect_filled(
+        Rect::from_min_size(pos, galley.size()),
+        CornerRadius::ZERO,
+        bg,
+    );
+    ui.painter().galley(pos, galley, accent);
+}
+
+/// htop header style `Key   value` line; `link` shows a pointer cursor.
+fn info_row(ui: &mut Ui, key: &str, value: &str, color: Color32, link: bool) -> Response {
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
+    let p = ui.painter_at(rect);
+    let mono = FontId::monospace(12.0);
+    p.text(
+        Pos2::new(rect.left(), rect.center().y),
+        Align2::LEFT_CENTER,
+        key,
+        mono.clone(),
+        uc().heading,
+    );
+    p.text(
+        Pos2::new(rect.left() + 70.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        value,
+        mono,
+        color,
+    );
+    if link && resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// Two columns side by side when there is room (>= 520 px), stacked otherwise.
+fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    if ui.available_width() >= 520.0 {
+        ui.scope(|ui| {
+            // Gap between the two columns (egui uses the horizontal item spacing).
+            ui.spacing_mut().item_spacing.x = 28.0;
+            ui.columns(2, |cols| {
+                let (l, r) = cols.split_at_mut(1);
+                left(&mut l[0]);
+                right(&mut r[0]);
+            });
+        });
+    } else {
+        left(ui);
+        ui.add_space(6.0);
+        right(ui);
+    }
 }

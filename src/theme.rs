@@ -377,8 +377,8 @@ pub fn draw_kde_donut_chart_sized(
     compact: bool,
 ) -> egui::Response {
     let height = if compact { 122.0 } else { 156.0 };
-    let desired = Vec2::new(ui.available_width().max(115.0), height);
-    let (rect, response) = ui.allocate_exact_size(desired, Sense::hover());
+    let desired = Vec2::new(ui.available_width(), height);
+    let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
     let painter = ui.painter_at(rect);
 
     let ring_center_y = if compact { 43.0 } else { 58.0 };
@@ -447,7 +447,7 @@ pub fn draw_kde_area_line_chart(
     series: &[(&VecDeque<f32>, Color32, f32)], // (history, color, max_val)
     pal: &KdeBreezePalette,
 ) {
-    let desired = Vec2::new(ui.available_width().max(180.0), height);
+    let desired = Vec2::new(ui.available_width(), height);
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     let painter = ui.painter_at(rect);
 
@@ -537,6 +537,26 @@ mod tests {
     }
 
     #[test]
+    fn system_scheme_buttons_follow_the_accent_not_orange() {
+        // KDE Breeze: accent blue, "neutral" orange.
+        let c = crate::system_colors::SystemColors {
+            window_bg: Some(Color32::from_rgb(32, 35, 38)),
+            accent: Some(Color32::from_rgb(61, 174, 233)),
+            neutral: Some(Color32::from_rgb(246, 116, 0)),
+            ..Default::default()
+        };
+        let pal =
+            KdeBreezePalette::from_system_colors(&c, PaletteSource::KdeGlobals, DesktopKind::Kde);
+        let ui = UiColors::from_palette(&pal);
+        let blueish = |c: Color32| c.b() > c.r();
+        assert!(blueish(ui.btn_orange), "{:?}", ui.btn_orange);
+        assert!(blueish(ui.orange), "{:?}", ui.orange);
+        assert!(blueish(ui.heading), "{:?}", ui.heading);
+        // The fixed AORUS scheme keeps its orange.
+        assert!(UiColors::AORUS.btn_orange.r() > UiColors::AORUS.btn_orange.b());
+    }
+
+    #[test]
     fn test_parse_kdeglobals_palette() {
         let sample = "[Colors:Window]\nBackgroundNormal=32,35,38\n[Colors:View]\nBackgroundNormal=20,22,24\nDecorationFocus=61,174,233\n";
         let mut pal = KdeBreezePalette::default();
@@ -569,6 +589,8 @@ pub struct UiColors {
     pub btn_slate: Color32,
     pub text_primary: Color32,
     pub text_secondary: Color32,
+    /// Headings and tooltip titles: accent with system colors, amber with AORUS.
+    pub heading: Color32,
 }
 
 impl UiColors {
@@ -590,6 +612,7 @@ impl UiColors {
         btn_slate: Color32::from_rgb(30, 41, 62),
         text_primary: Color32::from_rgb(248, 250, 252),
         text_secondary: Color32::from_rgb(203, 213, 225),
+        heading: Color32::from_rgb(255, 185, 30),
     };
 
     pub fn from_palette(p: &KdeBreezePalette) -> Self {
@@ -617,17 +640,20 @@ impl UiColors {
             bg_subgroup: p.view_bg,
             bg_card_hover: p.hover_bg,
             border_subtle: p.border_subtle,
-            orange: accent(p.neutral_orange),
+            // "orange" is the primary action / highlight role: it follows the desktop accent.
+            // Warnings keep their meaning through `amber` and `red`.
+            orange: accent(p.focus_blue),
             amber: accent(amber_base),
             cyan: accent(p.focus_blue),
             green: accent(p.positive_green),
             red: accent(p.negative_red),
-            btn_orange: fill(p.neutral_orange),
+            btn_orange: fill(p.focus_blue),
             btn_green: fill(p.positive_green),
             btn_cyan: fill(p.focus_blue),
             btn_slate: p.button_bg,
             text_primary: readable_on(p.text_normal, card, 4.5),
             text_secondary,
+            heading: accent(p.focus_blue),
         }
     }
 }

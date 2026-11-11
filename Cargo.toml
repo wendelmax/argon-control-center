@@ -16,6 +16,11 @@ eframe = { version = "0.31", default-features = false, features = [
     "x11",
 ] }
 egui = "0.31"
+resvg = { version = "0.37", default-features = false, features = ["text", "system-fonts"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 libc = "0.2"
+
+[dev-dependencies]
+ttf-parser = "0.20"
+epaint_default_fonts = "0.31"

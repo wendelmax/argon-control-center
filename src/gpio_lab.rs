@@ -570,12 +570,12 @@ impl GpioSerialLabState {
                         if high && !prev {
                             pin.rising_edges += 1;
                             if self.watched_bcm.contains(&bcm) {
-                                edge_events.push((bcm, "↑ RISING (0 -> 1 HIGH 3.3V)"));
+                                edge_events.push((bcm, "⬆ RISING (0 -> 1 HIGH 3.3V)"));
                             }
                         } else if !high && prev {
                             pin.falling_edges += 1;
                             if self.watched_bcm.contains(&bcm) {
-                                edge_events.push((bcm, "↓ FALLING (1 -> 0 LOW 0.0V)"));
+                                edge_events.push((bcm, "⬇ FALLING (1 -> 0 LOW 0.0V)"));
                             }
                         }
 
@@ -620,12 +620,12 @@ impl GpioSerialLabState {
             if pin.level_high && !prev {
                 pin.rising_edges += 1;
                 if self.watched_bcm.contains(&pin.bcm) {
-                    sim_events.push((pin.bcm, "↑ RISING (0 -> 1 HIGH 3.3V) [SIM]"));
+                    sim_events.push((pin.bcm, "⬆ RISING (0 -> 1 HIGH 3.3V) [SIM]"));
                 }
             } else if !pin.level_high && prev {
                 pin.falling_edges += 1;
                 if self.watched_bcm.contains(&pin.bcm) {
-                    sim_events.push((pin.bcm, "↓ FALLING (1 -> 0 LOW 0.0V) [SIM]"));
+                    sim_events.push((pin.bcm, "⬇ FALLING (1 -> 0 LOW 0.0V) [SIM]"));
                 }
             }
             if pin.history.len() >= LOGIC_HISTORY_LEN {

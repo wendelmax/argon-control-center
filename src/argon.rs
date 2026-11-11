@@ -209,7 +209,7 @@ pub fn serialize_fan_curve(points: &[FanCurvePoint], label: &str) -> String {
     let mut out = String::new();
     out.push_str("#\n");
     out.push_str(&format!("# Argon Fan Speed Configuration {label}\n"));
-    out.push_str("# Managed by Argon AORUS Control Center\n");
+    out.push_str("# Managed by Argon Control Center\n");
     out.push_str("# Min Temp=Fan Speed\n");
     out.push_str("#\n");
     for pt in sorted {

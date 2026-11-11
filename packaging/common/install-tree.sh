@@ -14,3 +14,4 @@ install -Dm644 "$C/argon-control-center.sysusers" "$DEST/usr/lib/sysusers.d/argo
 install -Dm644 "$C/argon-control-center.modules-load" "$DEST/usr/lib/modules-load.d/argon-control-center.conf"
 install -Dm755 "$C/setup-permissions.sh" "$DEST/usr/lib/argon-control-center/setup-permissions.sh"
 install -Dm644 "$ROOT/README.md" "$DEST/usr/share/doc/argon-control-center/README.md"
+install -Dm644 "$ROOT/assets/CREDITS.md" "$DEST/usr/share/doc/argon-control-center/CREDITS.md"

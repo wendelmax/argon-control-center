@@ -55,6 +55,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %files
 %license LICENSE
 %doc README.md
+%doc %{_docdir}/%{name}/CREDITS.md
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_udevrulesdir}/60-argon-control-center.rules

@@ -34,6 +34,26 @@ pub struct Texts {
     pub tab_features_tip: &'static str,
     pub tab_services: &'static str,
     pub tab_services_tip: &'static str,
+    pub mt_mem: &'static str,
+    pub mt_swap: &'static str,
+    pub mt_fan: &'static str,
+    pub mt_temp: &'static str,
+    pub mt_clock: &'static str,
+    pub mt_load: &'static str,
+    pub mt_uptime: &'static str,
+    pub mt_net: &'static str,
+    pub mt_power: &'static str,
+    pub mt_daemon: &'static str,
+    pub g_cpu: &'static str,
+    pub g_swap: &'static str,
+    pub g_download: &'static str,
+    pub g_upload: &'static str,
+    pub sidebar_collapse: &'static str,
+    pub sidebar_expand: &'static str,
+    pub gpio_view_diagram: &'static str,
+    pub gpio_view_list: &'static str,
+    pub gpio_diagram_hint: &'static str,
+    pub gpio_diagram_loading: &'static str,
     pub oc_power_title: &'static str,
     pub oc_power_blocked: &'static str,
     pub oc_power_tip: &'static str,
@@ -105,6 +125,7 @@ pub struct Texts {
     pub set_hardware: &'static str,
     pub set_color_source: &'static str,
     pub set_settings_file: &'static str,
+    pub set_credits: &'static str,
     pub set_reset: &'static str,
     pub set_reset_tip: &'static str,
     pub tab_gpio_lab: &'static str,
@@ -116,6 +137,8 @@ pub struct Texts {
     pub kde_cpu_history_title: &'static str,
     pub kde_thermal_history_title: &'static str,
     pub kde_mem_net_history_title: &'static str,
+    pub kde_mem_history_title: &'static str,
+    pub kde_net_history_title: &'static str,
     pub kde_compact_controls_title: &'static str,
     pub kde_compact_controls_tip: &'static str,
     pub mode_root: &'static str,
@@ -366,6 +389,26 @@ pub const TEXTS_PT: Texts = Texts {
     tab_features_tip: "Gerenciamento de barramentos I2C/SPI/UART, módulo OLED, DAC BLSTR, infravermelho e EEPROM.",
     tab_services: "🛡 Serviços",
     tab_services_tip: "Controle do serviço systemd argononed.service, inspetor de configurações e console de auditoria.",
+    mt_mem: "Mem",
+    mt_swap: "Swp",
+    mt_fan: "Vent",
+    mt_temp: "Temp",
+    mt_clock: "Clock",
+    mt_load: "Carga",
+    mt_uptime: "Ativo",
+    mt_net: "Rede",
+    mt_power: "5V",
+    mt_daemon: "Daemon",
+    g_cpu: "CPU",
+    g_swap: "SWAP",
+    g_download: "DOWNLOAD",
+    g_upload: "UPLOAD",
+    sidebar_collapse: "Recolher menu",
+    sidebar_expand: "Expandir menu",
+    gpio_view_diagram: "Diagrama",
+    gpio_view_list: "Lista",
+    gpio_diagram_hint: "Clique em um pino para selecioná-lo.",
+    gpio_diagram_loading: "Carregando diagrama…",
     oc_power_title: "FONTE DE ALIMENTAÇÃO",
     oc_power_blocked: "⚠ Subtensão detectada {n}× desde o boot. Overclock bloqueado: uma fonte que cai no clock de fábrica não sustenta overclock.",
     oc_power_tip: "Use a fonte oficial de 5,1 V / 3 A (ou a recomendada para o seu gabinete Argon) com cabo curto e reinicie. O bloqueio some quando não houver novos eventos após o boot.",
@@ -376,7 +419,7 @@ pub const TEXTS_PT: Texts = Texts {
     trial_in: "Boot de teste em execução: {s}. Rode o teste de estabilidade e depois mantenha ou descarte.",
     trial_failed: "O teste ({s}) não iniciou: o Pi voltou com as configurações normais. Este overclock não é estável nesta placa ou fonte.",
     trial_not_kept: "O teste ({s}) iniciou mas não foi mantido: o sistema reiniciou antes da confirmação.",
-    btn_trial_prepare: "🧪 Testar boot",
+    btn_trial_prepare: "▶ Testar boot",
     btn_trial_prepare_tip: "Grava em tryboot.txt, não em config.txt. Nada muda até reiniciar no teste, e desligar/ligar sempre volta às configurações atuais.",
     btn_trial_reboot: "🔁 Reiniciar no teste",
     btn_trial_keep: "✔ Manter",
@@ -437,17 +480,20 @@ pub const TEXTS_PT: Texts = Texts {
     set_hardware: "Hardware",
     set_color_source: "Cores do sistema",
     set_settings_file: "Preferências",
+    set_credits: "Créditos",
     set_reset: "Restaurar padrões",
     set_reset_tip: "Volta aparência, idioma, unidade e escala aos valores padrão.",
     tab_gpio_lab: "🔬 GPIO Lab",
     tab_gpio_lab_tip: "Analisador lógico de 40 pinos GPIO em tempo real (envio/recepção de sinais) e Console Serial/I2C estilo Arduino IDE.",
-    daemon_online: "● Daemon ativo",
-    daemon_offline: "● Daemon parado",
+    daemon_online: "⏺ Daemon ativo",
+    daemon_offline: "⏺ Daemon parado",
     daemon_badge_tip: "Guardião do Gabinete Argon (argononed.service):\n• Controla automaticamente a rotação da ventoinha conforme a temperatura.\n• Monitora o botão Power físico do gabinete (GPIO 4) para desligar/reiniciar com segurança.\n• Atualiza o visor OLED (I2C 0x3c).\n(Clique aqui para gerenciar o serviço)",
     kde_overview_sensors_title: "SENSORES",
     kde_cpu_history_title: "USO DA CPU",
     kde_thermal_history_title: "TEMPERATURA E VENTOINHA",
     kde_mem_net_history_title: "MEMÓRIA E REDE",
+    kde_mem_history_title: "MEMÓRIA",
+    kde_net_history_title: "REDE",
     kde_compact_controls_title: "CONTROLES RÁPIDOS",
     kde_compact_controls_tip: "Permite controlar a curva/velocidade do cooler Argon, perfil de Overclock/CPUFreq, serviço argononed e barramentos sem sair da Visão Geral.",
     mode_root: "ROOT DIRETO",
@@ -512,7 +558,7 @@ pub const TEXTS_PT: Texts = Texts {
     fan_control_mode_label: "Modo:",
     fan_tab_auto_curve: "🔄 Curva automática",
     fan_tab_auto_curve_tip: "O daemon argononed ajusta a rotação automaticamente conforme a temperatura sobe ou desce.",
-    fan_tab_manual_override: "🎛 Manual",
+    fan_tab_manual_override: "✋ Manual",
     fan_tab_manual_override_tip: "Envia uma velocidade fixa diretamente para a controladora MCU Argon via barramento I2C (0x1a).",
     fan_preset_label: "Predefinição:",
     fan_preset_tip: "Carrega pontos de temperatura x rotação pré-calibrados para silêncio, equilíbrio ou performance.",
@@ -664,20 +710,20 @@ pub const TEXTS_PT: Texts = Texts {
     btn_set_in_pd: "📥 IN pull-down",
     chk_watch_waveform: "Mostrar no analisador",
     card_logic_analyzer: "ANALISADOR LÓGICO",
-    card_logic_analyzer_tip: "Exibe as transições de nível lógico (0 = 0V LOW, 1 = 3.3V HIGH) e contagem de bordas de subida (↑) e descida (↓) dos pinos monitorados.",
+    card_logic_analyzer_tip: "Exibe as transições de nível lógico (0 = 0V LOW, 1 = 3.3V HIGH) e contagem de bordas de subida (⬆) e descida (⬇) dos pinos monitorados.",
     card_arduino_console: "CONSOLE",
     card_arduino_console_tip: "Terminal bidirecional para comunicação UART (/dev/ttyS0, /dev/ttyUSB*), captura de bordas GPIO e inspeção de registradores I2C.",
     mode_uart: "🔌 UART",
     mode_uart_tip: "Abre porta serial física (/dev/ttyS0, /dev/ttyAMA0, /dev/ttyUSB0) com controle de Baud Rate e envio/recepção em tempo real.",
     mode_gpio_mon: "⚡ GPIO",
-    mode_gpio_mon_tip: "Registra automaticamente cada pulso elétrico de subida (↑ HIGH) ou descida (↓ LOW) detectado nos pinos monitorados.",
+    mode_gpio_mon_tip: "Registra automaticamente cada pulso elétrico de subida (⬆ HIGH) ou descida (⬇ LOW) detectado nos pinos monitorados.",
     mode_i2c_insp: "📟 I2C",
     mode_i2c_insp_tip: "Permite escanear endereços I2C (i2cdetect) e ler registradores internos da controladora Argon MCU (0x1a).",
     btn_connect_serial: "🔌 Conectar",
     btn_disconnect_serial: "⏹ Desconectar",
     btn_i2c_scan: "🔍 Varrer I2C",
     btn_mcu_dump: "📟 Ler MCU",
-    btn_send_tx: "Enviar TX ⏎",
+    btn_send_tx: "Enviar TX ↩",
     tx_placeholder: "Digite dados seriais ou comandos ('help', 'scan', 'mcu', 'gpio', 'fan 80', 'high 17')...",
 };
 
@@ -692,6 +738,26 @@ pub const TEXTS_EN: Texts = Texts {
     tab_features_tip: "Configure I2C/SPI/UART buses, Argon OLED display, BLSTR DAC, IR receiver, and EEPROM settings.",
     tab_services: "🛡 Services",
     tab_services_tip: "Manage the argononed.service systemd daemon, inspect config files, and review audit logs.",
+    mt_mem: "Mem",
+    mt_swap: "Swp",
+    mt_fan: "Fan",
+    mt_temp: "Temp",
+    mt_clock: "Clock",
+    mt_load: "Load",
+    mt_uptime: "Uptime",
+    mt_net: "Net",
+    mt_power: "5V",
+    mt_daemon: "Daemon",
+    g_cpu: "CPU",
+    g_swap: "SWAP",
+    g_download: "DOWNLOAD",
+    g_upload: "UPLOAD",
+    sidebar_collapse: "Collapse menu",
+    sidebar_expand: "Expand menu",
+    gpio_view_diagram: "Diagram",
+    gpio_view_list: "List",
+    gpio_diagram_hint: "Click a pin to select it.",
+    gpio_diagram_loading: "Loading diagram…",
     oc_power_title: "POWER SUPPLY",
     oc_power_blocked: "⚠ Under-voltage detected {n}× since boot. Overclocking is blocked: a supply that dips at stock clocks cannot hold an overclock.",
     oc_power_tip: "Use the official 5.1 V / 3 A supply (or the one recommended for your Argon case) with a short cable, then reboot. The block clears when no new events occur after boot.",
@@ -702,7 +768,7 @@ pub const TEXTS_EN: Texts = Texts {
     trial_in: "Trial boot running: {s}. Run the stability test, then keep or discard.",
     trial_failed: "The trial ({s}) did not boot: the Pi came back with the normal settings. This overclock is not stable on this board or power supply.",
     trial_not_kept: "The trial ({s}) booted but was not kept: the system restarted before it was confirmed.",
-    btn_trial_prepare: "🧪 Test boot",
+    btn_trial_prepare: "▶ Test boot",
     btn_trial_prepare_tip: "Writes to tryboot.txt, not config.txt. Nothing changes until you reboot into the trial, and a power cycle always returns to the current settings.",
     btn_trial_reboot: "🔁 Reboot into trial",
     btn_trial_keep: "✔ Keep",
@@ -763,17 +829,20 @@ pub const TEXTS_EN: Texts = Texts {
     set_hardware: "Hardware",
     set_color_source: "System colors",
     set_settings_file: "Preferences file",
+    set_credits: "Credits",
     set_reset: "Restore defaults",
     set_reset_tip: "Resets appearance, language, unit and scale to their defaults.",
     tab_gpio_lab: "🔬 GPIO Lab",
     tab_gpio_lab_tip: "Real-time 40-pin GPIO logic analyzer (input/output signal states) and Arduino IDE-style Serial/I2C Developer Console.",
-    daemon_online: "● Daemon on",
-    daemon_offline: "● Daemon off",
+    daemon_online: "⏺ Daemon on",
+    daemon_offline: "⏺ Daemon off",
     daemon_badge_tip: "Argon Case Guardian (argononed.service):\n• Automatically adjusts fan speed according to your thermal curve.\n• Monitors the physical case Power Button (GPIO 4) for safe shutdown/reboot.\n• Updates the I2C OLED display (0x3c).\n(Click here to manage the service)",
     kde_overview_sensors_title: "SENSORS",
     kde_cpu_history_title: "CPU USAGE",
     kde_thermal_history_title: "TEMPERATURE & FAN",
     kde_mem_net_history_title: "MEMORY & NETWORK",
+    kde_mem_history_title: "MEMORY",
+    kde_net_history_title: "NETWORK",
     kde_compact_controls_title: "QUICK CONTROLS",
     kde_compact_controls_tip: "Adjust Argon fan curve/speed, Overclock/CPUFreq profile, argononed daemon, and hardware buses directly from the Overview.",
     mode_root: "DIRECT ROOT",
@@ -838,7 +907,7 @@ pub const TEXTS_EN: Texts = Texts {
     fan_control_mode_label: "Mode:",
     fan_tab_auto_curve: "🔄 Auto curve",
     fan_tab_auto_curve_tip: "The argononed daemon automatically adjusts fan speed as temperatures rise or fall.",
-    fan_tab_manual_override: "🎛 Manual",
+    fan_tab_manual_override: "✋ Manual",
     fan_tab_manual_override_tip: "Sends a fixed PWM duty cycle directly to the Argon MCU over the I2C bus (0x1a).",
     fan_preset_label: "Preset:",
     fan_preset_tip: "Loads pre-calibrated temperature-to-PWM stages optimized for silence, balance, or maximum cooling.",
@@ -990,20 +1059,20 @@ pub const TEXTS_EN: Texts = Texts {
     btn_set_in_pd: "📥 IN pull-down",
     chk_watch_waveform: "Show in analyzer",
     card_logic_analyzer: "LOGIC ANALYZER",
-    card_logic_analyzer_tip: "Plots logic level transitions (0 = 0V LOW, 1 = 3.3V HIGH) and counts rising (↑) and falling (↓) edges for watched pins.",
+    card_logic_analyzer_tip: "Plots logic level transitions (0 = 0V LOW, 1 = 3.3V HIGH) and counts rising (⬆) and falling (⬇) edges for watched pins.",
     card_arduino_console: "CONSOLE",
     card_arduino_console_tip: "Bidirectional terminal for UART serial ports (/dev/ttyS0, /dev/ttyUSB*), GPIO edge capture, and I2C register inspection.",
     mode_uart: "🔌 UART",
     mode_uart_tip: "Opens physical serial ports (/dev/ttyS0, /dev/ttyAMA0, /dev/ttyUSB0) with Baud Rate selection and live TX/RX streaming.",
     mode_gpio_mon: "⚡ GPIO",
-    mode_gpio_mon_tip: "Automatically logs every rising (↑ HIGH) or falling (↓ LOW) electrical pulse detected on watched pins.",
+    mode_gpio_mon_tip: "Automatically logs every rising (⬆ HIGH) or falling (⬇ LOW) electrical pulse detected on watched pins.",
     mode_i2c_insp: "📟 I2C",
     mode_i2c_insp_tip: "Scans I2C bus addresses (i2cdetect) and reads internal Argon MCU registers (0x1a).",
     btn_connect_serial: "🔌 Connect",
     btn_disconnect_serial: "⏹ Disconnect",
     btn_i2c_scan: "🔍 Scan I2C",
     btn_mcu_dump: "📟 Read MCU",
-    btn_send_tx: "Send TX ⏎",
+    btn_send_tx: "Send TX ↩",
     tx_placeholder: "Type serial payload or hardware commands ('help', 'scan', 'mcu', 'gpio', 'fan 80', 'high 17')...",
 };
 
@@ -1011,5 +1080,51 @@ pub fn texts(lang: Language) -> &'static Texts {
     match lang {
         Language::PtBr => &TEXTS_PT,
         Language::EnUs => &TEXTS_EN,
+    }
+}
+
+#[cfg(test)]
+mod glyph_tests {
+    /// Every non-ASCII character used in UI code must exist in one of egui's built-in fonts;
+    /// otherwise it is drawn as an empty square.
+    #[test]
+    fn ui_strings_only_use_characters_egui_can_draw() {
+        // egui's proportional text falls back Ubuntu-Light -> NotoEmoji -> emoji-icon-font.
+        // Hack is only used for monospace text, so it must not count here.
+        let fonts: Vec<ttf_parser::Face> = [
+            epaint_default_fonts::UBUNTU_LIGHT,
+            epaint_default_fonts::NOTO_EMOJI_REGULAR,
+            epaint_default_fonts::EMOJI_ICON,
+        ]
+        .iter()
+        .map(|data| ttf_parser::Face::parse(data, 0).unwrap())
+        .collect();
+        let sources = [
+            ("i18n.rs", include_str!("i18n.rs")),
+            ("ui.rs", include_str!("ui.rs")),
+            ("argon.rs", include_str!("argon.rs")),
+            ("overclock.rs", include_str!("overclock.rs")),
+            ("gpio_lab.rs", include_str!("gpio_lab.rs")),
+            ("board.rs", include_str!("board.rs")),
+            ("pinout.rs", include_str!("pinout.rs")),
+        ];
+        let mut missing = Vec::new();
+        for (file, src) in sources {
+            for (n, line) in src.lines().enumerate() {
+                // Only string literals matter; skip comments.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                for c in line.chars().filter(|c| !c.is_ascii()) {
+                    if !fonts.iter().any(|f| f.glyph_index(c).is_some()) {
+                        missing.push(format!("{file}:{} {c} (U+{:04X})", n + 1, c as u32));
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "characters without a glyph: {missing:#?}"
+        );
     }
 }
