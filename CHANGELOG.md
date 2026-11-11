@@ -8,6 +8,8 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
 ### Added
 - AUR package `argon-control-center`, updated automatically after each release.
 - Fedora COPR repository `wendelmax/argon-control-center`, built from each release tag.
@@ -88,6 +90,7 @@ First public release.
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.
 - Hardware access is granted through group membership and udev rules; no setuid binaries or world-writable device nodes are used.
 
-[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/wendelmax/argon-control-center/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/wendelmax/argon-control-center/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wendelmax/argon-control-center/releases/tag/v0.1.0
