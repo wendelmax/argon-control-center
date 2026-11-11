@@ -1,7 +1,10 @@
-//! Terminal user interface (btop-style, read-only), used when there is no graphical
-//! session (no Wayland / X11 display) or with `--tui`.
+//! Terminal user interface, used when there is no graphical session (no Wayland / X11
+//! display) or with `--tui`: a btop-style dashboard plus Fan, CPU, GPIO and Services tabs with
+//! the same safety rules as the graphical interface.
 //!
 //! Data comes from [`crate::snapshot`], the same source as `--json` and the desktop widgets.
+
+mod controls;
 
 use crate::i18n::Language;
 use crate::snapshot::{self, Snapshot};
@@ -23,20 +26,103 @@ const RED: Color = Color::Rgb(218, 68, 83);
 const PURPLE: Color = Color::Rgb(155, 89, 182);
 const DIM: Color = Color::Rgb(70, 74, 80);
 
+/// English or Portuguese text.
+fn tr(lang: Language, en: &'static str, pt: &'static str) -> &'static str {
+    match lang {
+        Language::EnUs => en,
+        Language::PtBr => pt,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Dashboard,
+    Fan,
+    Cpu,
+    Gpio,
+    Services,
+}
+
+impl Tab {
+    const ALL: [Tab; 5] = [Tab::Dashboard, Tab::Fan, Tab::Cpu, Tab::Gpio, Tab::Services];
+
+    fn index(self) -> usize {
+        Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
+
+    fn title(self, lang: Language) -> &'static str {
+        match self {
+            Tab::Dashboard => tr(lang, "Dashboard", "Painel"),
+            Tab::Fan => tr(lang, "Fan", "Ventoinha"),
+            Tab::Cpu => "CPU",
+            Tab::Gpio => "GPIO",
+            Tab::Services => tr(lang, "Services", "Serviços"),
+        }
+    }
+}
+
 struct App {
     snap: Snapshot,
     cpu_hist: Vec<u64>,
     rx_hist: Vec<u64>,
     lang: Language,
     show_help: bool,
+    tab: Tab,
+    /// Selected row of each tab.
+    sel: [usize; 5],
+    ctl: controls::State,
+    confirm: Option<controls::Action>,
+    message: Option<(String, bool, Instant)>,
 }
 
 impl App {
+    fn new(snap: Snapshot, lang: Language) -> Self {
+        App {
+            snap,
+            cpu_hist: Vec::new(),
+            rx_hist: Vec::new(),
+            lang,
+            show_help: false,
+            tab: Tab::Dashboard,
+            sel: [0; 5],
+            ctl: controls::State::load(),
+            confirm: None,
+            message: None,
+        }
+    }
+
     fn refresh(&mut self) {
         self.snap = snapshot::take();
         push(&mut self.cpu_hist, self.snap.cpu.total.round() as u64);
         push(&mut self.rx_hist, self.snap.net.rx_kbps.round() as u64);
+        self.ctl.tick();
     }
+
+    fn say(&mut self, text: String, error: bool) {
+        self.message = Some((text, error, Instant::now()));
+    }
+}
+
+/// Leaves the alternate screen so pkexec can ask for the password in the terminal, runs `f`
+/// and restores the interface.
+fn suspended<T>(
+    terminal: &mut DefaultTerminal,
+    lang: Language,
+    f: impl FnOnce() -> T,
+) -> std::io::Result<T> {
+    ratatui::restore();
+    println!(
+        "\n{}",
+        tr(
+            lang,
+            "Argon Control Center: the system may ask for your password.",
+            "Argon Control Center: o sistema pode pedir sua senha."
+        )
+    );
+    let out = f();
+    *terminal = ratatui::try_init()?;
+    terminal.clear()?;
+    Ok(out)
 }
 
 fn push(v: &mut Vec<u64>, x: u64) {
@@ -58,25 +144,15 @@ fn event_loop(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     // Prime the rate cache so the first frame already shows real percentages.
     snapshot::take();
     std::thread::sleep(Duration::from_millis(250));
-    let mut app = App {
-        snap: snapshot::take(),
-        cpu_hist: Vec::new(),
-        rx_hist: Vec::new(),
-        lang: crate::settings::load().language,
-        show_help: false,
-    };
+    let mut app = App::new(snapshot::take(), crate::settings::load().language);
     let mut last = Instant::now();
     loop {
         terminal.draw(|f| draw(f, &app))?;
         let timeout = TICK.saturating_sub(last.elapsed());
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                        KeyCode::Char('?') | KeyCode::Char('h') => app.show_help = !app.show_help,
-                        _ => {}
-                    }
+                if key.kind == KeyEventKind::Press && handle_key(terminal, &mut app, key.code)? {
+                    return Ok(());
                 }
             }
         }
@@ -85,6 +161,63 @@ fn event_loop(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             last = Instant::now();
         }
     }
+}
+
+/// Returns true to quit.
+fn handle_key(
+    terminal: &mut DefaultTerminal,
+    app: &mut App,
+    code: KeyCode,
+) -> std::io::Result<bool> {
+    // Confirmation window: y / Enter runs the action, anything else cancels it.
+    if let Some(action) = app.confirm.take() {
+        if matches!(
+            code,
+            KeyCode::Char('y') | KeyCode::Char('s') | KeyCode::Enter
+        ) {
+            let lang = app.lang;
+            let res = if action.needs_root() {
+                suspended(terminal, lang, || action.run(&mut app.ctl))?
+            } else {
+                action.run(&mut app.ctl)
+            };
+            app.ctl.after_action();
+            app.refresh();
+            match res {
+                Ok(msg) => app.say(msg.lines().last().unwrap_or("OK").to_string(), false),
+                Err(e) => app.say(e, true),
+            }
+        } else {
+            app.say(tr(app.lang, "Cancelled.", "Cancelado.").into(), false);
+        }
+        return Ok(false);
+    }
+    if app.show_help {
+        app.show_help = false;
+        return Ok(false);
+    }
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => return Ok(true),
+        KeyCode::Char('?') => app.show_help = true,
+        KeyCode::Char(c @ '1'..='5') => app.tab = Tab::ALL[c as usize - '1' as usize],
+        KeyCode::Tab => app.tab = Tab::ALL[(app.tab.index() + 1) % Tab::ALL.len()],
+        KeyCode::BackTab => {
+            app.tab = Tab::ALL[(app.tab.index() + Tab::ALL.len() - 1) % Tab::ALL.len()]
+        }
+        _ if app.tab != Tab::Dashboard => {
+            let i = app.tab.index();
+            let mut sel = app.sel[i];
+            let outcome = app.ctl.key(app.tab, &mut sel, code, &app.snap, app.lang);
+            app.sel[i] = sel;
+            match outcome {
+                controls::Outcome::Confirm(a) => app.confirm = Some(a),
+                controls::Outcome::Message(m, err) => app.say(m, err),
+                controls::Outcome::None => {}
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -166,8 +299,119 @@ fn uptime(s: u64) -> String {
 // ---------------------------------------------------------------------------------------------
 
 fn draw(f: &mut Frame, app: &App) {
-    let [main, footer] =
-        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(f.area());
+    let [tabs, main, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .areas(f.area());
+    draw_tabs(f, tabs, app);
+    match app.tab {
+        Tab::Dashboard => draw_dashboard(f, main, app),
+        Tab::Fan => controls::draw_fan(f, main, &app.ctl, &app.snap, app.sel[1], app.lang),
+        Tab::Cpu => controls::draw_cpu(f, main, &app.ctl, &app.snap, app.sel[2], app.lang),
+        Tab::Gpio => controls::draw_gpio(f, main, &app.ctl, &app.snap, app.lang),
+        Tab::Services => {
+            controls::draw_services(f, main, &app.ctl, &app.snap, app.sel[4], app.lang)
+        }
+    }
+    draw_footer(f, footer, app);
+    if let Some(action) = &app.confirm {
+        draw_confirm(f, &action.describe(app.lang), app.lang);
+    }
+    if app.show_help {
+        draw_help(f, app.lang);
+    }
+}
+
+fn draw_tabs(f: &mut Frame, area: Rect, app: &App) {
+    let mut spans = vec![Span::raw(" ")];
+    for (i, t) in Tab::ALL.iter().enumerate() {
+        let style = if *t == app.tab {
+            Style::new()
+                .fg(Color::Black)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(Color::Gray)
+        };
+        spans.push(Span::styled(
+            format!(" {} {} ", i + 1, t.title(app.lang)),
+            style,
+        ));
+        spans.push(Span::raw(" "));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
+    let s = &app.snap;
+    let keys = match (app.lang, app.tab) {
+        (Language::PtBr, Tab::Dashboard) => "1-5 abas · ? ajuda · q sair",
+        (Language::EnUs, Tab::Dashboard) => "1-5 tabs · ? help · q quit",
+        (Language::PtBr, _) => "setas escolhem · Enter aplica · ? ajuda · q sair",
+        (Language::EnUs, _) => "arrows select · Enter applies · ? help · q quit",
+    };
+    let recent = app
+        .message
+        .as_ref()
+        .filter(|(_, _, at)| at.elapsed() < Duration::from_secs(8));
+    let [left, right] = Layout::horizontal([
+        Constraint::Min(1),
+        Constraint::Length(keys.chars().count() as u16 + 2),
+    ])
+    .areas(area);
+    match recent {
+        Some((text, err, _)) => f.render_widget(
+            Paragraph::new(format!(" {text}")).fg(if *err { RED } else { GREEN }),
+            left,
+        ),
+        None => {
+            let info = format!(
+                " {} · {} · {} · up {} · load {:.2} {:.2} {:.2}",
+                s.board,
+                s.system.os,
+                s.system.kernel,
+                uptime(s.system.uptime_s),
+                s.system.load[0],
+                s.system.load[1],
+                s.system.load[2]
+            );
+            f.render_widget(Paragraph::new(info).fg(Color::Gray), left);
+        }
+    }
+    f.render_widget(Paragraph::new(keys).fg(BLUE).right_aligned(), right);
+}
+
+fn draw_confirm(f: &mut Frame, text: &str, lang: Language) {
+    let width = (f.area().width.saturating_sub(8)).clamp(30, 72);
+    let body = vec![
+        Line::from(text.to_string()),
+        Line::from(""),
+        Line::from(tr(
+            lang,
+            "y / Enter: confirm     n / Esc: cancel",
+            "s / Enter: confirmar     n / Esc: cancelar",
+        ))
+        .fg(BLUE),
+    ];
+    let lines_needed = (text.chars().count() as u16 / width.saturating_sub(4).max(1)) + 5;
+    let [area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(f.area());
+    let [area] = Layout::vertical([Constraint::Length(lines_needed)])
+        .flex(Flex::Center)
+        .areas(area);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(body)
+            .wrap(Wrap { trim: true })
+            .block(boxed(tr(lang, "confirm", "confirmar"), AMBER)),
+        area,
+    );
+}
+
+fn draw_dashboard(f: &mut Frame, main: Rect, app: &App) {
     let s = &app.snap;
     let cores = s.cpu.cores.len() as u16;
     let cpu_h = cores + 7;
@@ -207,32 +451,6 @@ fn draw(f: &mut Frame, app: &App) {
         draw_net(f, net, app);
         draw_gpu(f, gpu, s);
         draw_argon(f, argon, s);
-    }
-
-    let keys = match app.lang {
-        Language::PtBr => "q sair · ? ajuda",
-        Language::EnUs => "q quit · ? help",
-    };
-    let info = format!(
-        " {} · {} · {} · up {} · load {:.2} {:.2} {:.2}",
-        s.board,
-        s.system.os,
-        s.system.kernel,
-        uptime(s.system.uptime_s),
-        s.system.load[0],
-        s.system.load[1],
-        s.system.load[2]
-    );
-    let [left, right] = Layout::horizontal([
-        Constraint::Min(1),
-        Constraint::Length(keys.len() as u16 + 2),
-    ])
-    .areas(footer);
-    f.render_widget(Paragraph::new(info).fg(Color::Gray), left);
-    f.render_widget(Paragraph::new(keys).fg(BLUE).right_aligned(), right);
-
-    if app.show_help {
-        draw_help(f, app.lang);
     }
 }
 
@@ -431,12 +649,16 @@ fn draw_argon(f: &mut Frame, area: Rect, s: &Snapshot) {
 fn draw_help(f: &mut Frame, lang: Language) {
     let text = match lang {
         Language::PtBr => vec![
-            "Modo terminal (somente leitura) do Argon Control Center.",
+            "Modo terminal do Argon Control Center.",
             "",
-            "q / Esc   sair          ? / h   mostrar ou ocultar esta ajuda",
+            "1-5 / Tab   abas: Painel, Ventoinha, CPU, GPIO, Serviços",
+            "setas       escolhem a linha e ajustam valores (< >)",
+            "Enter       aplica; toda mudança pede confirmação (s / n)",
+            "?           esta ajuda          q / Esc   sair",
             "",
+            "Mudanças com root mostram o pedido de senha do sistema no terminal.",
+            "Overclock acima do padrão: fonte saudável, boot de teste e teste estável.",
             "Abre automaticamente quando não há sessão gráfica (Wayland/X11).",
-            "Para alterar configurações, use a interface gráfica (--gui).",
             "",
             "Linha de comando:",
             "  --status        telemetria e hardware detectado",
@@ -445,12 +667,16 @@ fn draw_help(f: &mut Frame, lang: Language) {
             "  --stress 180    teste de estabilidade",
         ],
         Language::EnUs => vec![
-            "Argon Control Center terminal mode (read-only).",
+            "Argon Control Center terminal mode.",
             "",
-            "q / Esc   quit          ? / h   show or hide this help",
+            "1-5 / Tab   tabs: Dashboard, Fan, CPU, GPIO, Services",
+            "arrows      select a row and adjust values (< >)",
+            "Enter       applies; every change asks for confirmation (y / n)",
+            "?           this help          q / Esc   quit",
             "",
+            "Changes that need root show the system password prompt in the terminal.",
+            "Overclock above factory: healthy power supply, trial boot and a stable test.",
             "Opens automatically when there is no graphical session (Wayland/X11).",
-            "To change settings, use the graphical interface (--gui).",
             "",
             "Command line:",
             "  --status        telemetry and detected hardware",
@@ -502,25 +728,28 @@ mod tests {
 
     #[test]
     fn renders_wide_and_narrow_without_panicking() {
-        let app = App {
-            snap: snapshot::take(),
-            cpu_hist: vec![10, 50, 90],
-            rx_hist: vec![1, 2, 3],
-            lang: Language::EnUs,
-            show_help: true,
-        };
-        for (w, h) in [(140, 45), (80, 60), (40, 20)] {
-            let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
-            t.draw(|f| draw(f, &app)).unwrap();
-            let text: String = t
-                .backend()
-                .buffer()
-                .content()
-                .iter()
-                .map(|c| c.symbol())
-                .collect();
-            assert!(text.contains("cpu"), "{w}x{h}");
+        let mut app = App::new(snapshot::take(), Language::EnUs);
+        app.cpu_hist = vec![10, 50, 90];
+        app.rx_hist = vec![1, 2, 3];
+        for tab in Tab::ALL {
+            app.tab = tab;
+            for (w, h) in [(140, 45), (80, 60), (40, 20)] {
+                let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+                t.draw(|f| draw(f, &app)).unwrap();
+                let text: String = t
+                    .backend()
+                    .buffer()
+                    .content()
+                    .iter()
+                    .map(|c| c.symbol())
+                    .collect();
+                assert!(text.contains("Dashboard"), "{tab:?} {w}x{h}");
+            }
         }
+        app.confirm = Some(controls::Action::Service("restart"));
+        app.show_help = true;
+        let mut t = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        t.draw(|f| draw(f, &app)).unwrap();
     }
 }
 
@@ -536,12 +765,15 @@ mod preview {
     fn print_frame() {
         snapshot::take();
         std::thread::sleep(Duration::from_millis(300));
-        let app = App {
-            snap: snapshot::take(),
-            cpu_hist: (0..60).map(|i| (i * 7 % 100) as u64).collect(),
-            rx_hist: (0..60).map(|i| (i * 13 % 90) as u64).collect(),
-            lang: Language::EnUs,
-            show_help: false,
+        let mut app = App::new(snapshot::take(), Language::EnUs);
+        app.cpu_hist = (0..60).map(|i| (i * 7 % 100) as u64).collect();
+        app.rx_hist = (0..60).map(|i| (i * 13 % 90) as u64).collect();
+        app.tab = match std::env::var("TUI_TAB").as_deref() {
+            Ok("fan") => Tab::Fan,
+            Ok("cpu") => Tab::Cpu,
+            Ok("gpio") => Tab::Gpio,
+            Ok("services") => Tab::Services,
+            _ => Tab::Dashboard,
         };
         let mut t = Terminal::new(TestBackend::new(120, 40)).unwrap();
         t.draw(|f| draw(f, &app)).unwrap();

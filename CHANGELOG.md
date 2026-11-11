@@ -8,6 +8,9 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+### Added
+- Terminal interface controls: Fan (curve, profiles, save, manual speed, Enable I2C), CPU (live governor and clocks, firmware profiles with the same safe-overclock rules as the window: healthy supply, trial boot, stability test, keep), GPIO (header map, toggle output pins) and Services (argononed) tabs. Every change is confirmed, and changes that need root hand the terminal to the system password prompt.
+
 ### Changed
 - New Overclock page: a live strip with the CPU clock (marks at the factory and boot clocks), the temperature against `temp_limit`, the core voltage and the firmware flags (now / since boot); profile cards with the clock, GPU clock and voltage each profile sets on the detected board, a bar against the board maximum and badges (factory, trial boot, blocked by the power supply); and the safe-overclock steps (power supply, trial boot, stability, keep) with their live state. The safety rules are unchanged. Moves the page to `src/ui/overclock.rs`.
 - The live strips of the Fan and Overclock pages spread over the window width instead of leaving empty space on the right.

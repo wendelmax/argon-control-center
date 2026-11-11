@@ -227,7 +227,17 @@ Without a graphical session (neither `WAYLAND_DISPLAY` nor `DISPLAY` set) and wh
  Pi 4 · BCM2711 · 8 GB · Argon ONE (Pi 4) · up 4h 12m · load 0.52   q quit · ? help
 ```
 
-It is read-only and refreshes every second; meters are filled from left to right (0 to 100 %) with a green, amber and red gradient. Press `q` or `Esc` to quit and `?` for help. Use the graphical interface to change settings.
+It refreshes every second and has five tabs, switched with `1`–`5` or `Tab`:
+
+| Tab | Shows and controls |
+|---|---|
+| Dashboard | cpu, mem, net, gpu and argon boxes; meters filled from left to right with a green, amber and red gradient |
+| Fan | curve as bars with the current temperature, profiles, save the curve, fixed manual speed, return to the curve, Enable I2C |
+| CPU | governor and min/max clock until reboot; firmware profiles with the same safe-overclock rules as the window (healthy supply, trial boot, stability test, keep) |
+| GPIO | 40-pin header with live levels; toggles pins that are already outputs |
+| Services | start, stop, restart argononed; start at boot or not |
+
+Arrows select rows and change `< values >`, `Enter` applies, and every change asks for confirmation. Changes that need root leave the interface while the system asks for the password in the terminal (Polkit's text agent works over SSH), then return. Press `?` for help and `q` to quit.
 
 The command-line reference is available as a manual page: `man argon-control-center`.
 

@@ -81,23 +81,50 @@ Load every CPU core for the given time while recording temperature, clock and
 the 5\ V supply, then print a verdict. Exits with status 1 when the result is not
 stable (throttling, temperature limit or under-voltage).
 .SH TERMINAL INTERFACE
-The terminal interface is read-only and refreshes every second. It shows the
-.BR cpu ,
-.BR mem ,
-.BR net ,
-.B gpu
-and
-.B argon
-boxes with meters filled from left to right (0 to 100\ %) and a footer with the
-board, system, kernel, uptime and load average.
+The terminal interface refreshes every second and has five tabs:
+.TP
+.B Dashboard
+cpu, mem, net, gpu and argon boxes with meters filled from left to right.
+.TP
+.B Fan
+the curve as bars with the current temperature, profiles, saving the curve,
+a fixed manual speed and the return to the curve; Enable I2C when the bus is off.
+.TP
+.B CPU
+governor and minimum and maximum clock until the next reboot; firmware profiles,
+which above the factory clock need a healthy power supply and go through a trial
+boot, a stability test and keeping the trial settings.
+.TP
+.B GPIO
+the 40-pin header with live levels; Enter toggles a pin that is already an output.
+.TP
+.B Services
+start, stop or restart argononed and choose whether it starts at boot.
+.PP
+Keys:
+.TP
+.BR 1 \- 5 ", " Tab
+Switch tabs.
+.TP
+Arrows
+Select a row; left and right change the value of rows shown as < value >.
+.TP
+.B Enter
+Apply. Every change asks for confirmation
+.RB ( y
+or
+.BR Enter ;
+.B n
+or
+.B Esc
+cancels). Changes that need root leave the interface while the system asks
+for the password, then return.
+.TP
+.B ?
+Help.
 .TP
 .BR q ", " Esc
 Quit.
-.TP
-.BR ? ", " h
-Show or hide the help window.
-.PP
-Use the graphical interface to change settings.
 .SH DESKTOP WIDGETS
 On KDE Plasma 6, the
 .B Add Widgets
