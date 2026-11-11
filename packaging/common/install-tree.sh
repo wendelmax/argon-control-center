@@ -15,3 +15,8 @@ install -Dm644 "$C/argon-control-center.modules-load" "$DEST/usr/lib/modules-loa
 install -Dm755 "$C/setup-permissions.sh" "$DEST/usr/lib/argon-control-center/setup-permissions.sh"
 install -Dm644 "$ROOT/README.md" "$DEST/usr/share/doc/argon-control-center/README.md"
 install -Dm644 "$ROOT/assets/CREDITS.md" "$DEST/usr/share/doc/argon-control-center/CREDITS.md"
+
+# Plasma 6 desktop widgets (shared components assembled by stage.sh)
+sh "$ROOT/packaging/plasma/stage.sh" "$DEST/usr/share/plasma/plasmoids"
+find "$DEST/usr/share/plasma/plasmoids" -type d -exec chmod 755 {} +
+find "$DEST/usr/share/plasma/plasmoids" -type f -exec chmod 644 {} +

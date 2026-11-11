@@ -39,6 +39,7 @@ pub enum ActiveTab {
     GpioLab,
     ServicesAndConfig,
     Settings,
+    Help,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -451,6 +452,7 @@ impl eframe::App for ArgonControlCenterApp {
                         ActiveTab::GpioLab => self.draw_gpio_lab_tab(ui),
                         ActiveTab::ServicesAndConfig => self.draw_services_tab(ui),
                         ActiveTab::Settings => self.draw_settings_tab(ui, ctx),
+                        ActiveTab::Help => self.draw_help_tab(ui),
                     });
             });
     }
@@ -1052,7 +1054,7 @@ impl ArgonControlCenterApp {
                     info_pairs_row(ui, &misc);
                     // Throttling status on its own line (can be long).
                     if let Some(th) = fw.throttled {
-                        let (text, bad) = throttle_summary(th, self.lang);
+                        let (text, bad) = crate::gpu::throttle_summary(th, self.lang);
                         info_row(
                             ui,
                             t.mt_throttle,
@@ -2033,6 +2035,38 @@ impl ArgonControlCenterApp {
     // =========================================================================
     // SETTINGS: appearance, language, units, about
     // =========================================================================
+    // Help: one collapsible section per feature, each linking to its page.
+    fn draw_help_tab(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let mut go: Option<ActiveTab> = None;
+        aorus_card_with_tip(ui, t.help_title, t.help_tip, uc().cyan, |ui| {
+            for (i, sec) in crate::help::sections(self.lang).iter().enumerate() {
+                egui::CollapsingHeader::new(RichText::new(sec.title).strong().color(uc().heading))
+                    .id_salt(("help", i))
+                    .default_open(i == 0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(RichText::new(sec.body).color(uc().text_primary))
+                                .wrap(),
+                        );
+                        if let Some(page) = sec.page {
+                            if page != ActiveTab::Help
+                                && ui
+                                    .button(RichText::new(t.help_open_page).strong())
+                                    .clicked()
+                            {
+                                go = Some(page);
+                            }
+                        }
+                        ui.add_space(4.0);
+                    });
+            }
+        });
+        if let Some(tab) = go {
+            self.active_tab = tab;
+        }
+    }
+
     fn draw_settings_tab(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let t = texts(self.lang);
         let mut restyle = false;
@@ -2889,7 +2923,7 @@ impl ArgonControlCenterApp {
                 .wrap(),
             );
             if let Some(th) = self.telemetry.firmware.throttled {
-                let (text, _) = throttle_summary(th, self.lang);
+                let (text, _) = crate::gpu::throttle_summary(th, self.lang);
                 ui.label(
                     RichText::new(format!("{}: {text}", t.mt_throttle))
                         .size(12.0)
@@ -5431,7 +5465,7 @@ fn tint(accent: Color32) -> Color32 {
 }
 
 /// Navigation entries in display order: (tab, label, tooltip).
-fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 7] {
+fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 8] {
     let t = texts(lang);
     [
         (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
@@ -5449,6 +5483,7 @@ fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 7] {
             t.tab_services_tip,
         ),
         (ActiveTab::Settings, t.tab_settings, t.tab_settings_tip),
+        (ActiveTab::Help, t.tab_help, t.tab_help_tip),
     ]
 }
 
@@ -5792,52 +5827,6 @@ fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut 
         ui.add_space(6.0);
         right(ui);
     }
-}
-
-/// Human summary of the firmware throttling flags; `true` when anything was reported.
-fn throttle_summary(th: crate::gpu::Throttled, lang: Language) -> (String, bool) {
-    let t = texts(lang);
-    if !th.any() {
-        return (t.thr_ok.to_string(), false);
-    }
-    let mut now = Vec::new();
-    let mut boot = Vec::new();
-    for (active, past, name) in [
-        (
-            th.undervoltage_now(),
-            th.undervoltage_since_boot(),
-            t.thr_uv,
-        ),
-        (
-            th.freq_capped_now(),
-            th.freq_capped_since_boot(),
-            t.thr_capped,
-        ),
-        (
-            th.throttled_now(),
-            th.throttled_since_boot(),
-            t.thr_throttled,
-        ),
-        (
-            th.soft_temp_limit_now(),
-            th.soft_temp_limit_since_boot(),
-            t.thr_soft,
-        ),
-    ] {
-        if active {
-            now.push(name);
-        } else if past {
-            boot.push(name);
-        }
-    }
-    let mut parts = Vec::new();
-    if !now.is_empty() {
-        parts.push(format!("{} ({})", now.join(", "), t.thr_now));
-    }
-    if !boot.is_empty() {
-        parts.push(format!("{} ({})", boot.join(", "), t.thr_boot));
-    }
-    (parts.join("; "), true)
 }
 
 /// Several `key value` pairs on one line, in equal-width cells (related values grouped).

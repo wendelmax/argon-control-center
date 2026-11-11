@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.thermal",
+        "Name": "Argon Thermal",
+        "Name[pt_BR]": "Argon Térmico",
+        "Description": "SoC temperature and Argon case fan.",
+        "Description[pt_BR]": "Temperatura do SoC e ventoinha do gabinete Argon.",
+        "Icon": "temperature-normal",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.2.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

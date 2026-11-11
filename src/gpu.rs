@@ -276,6 +276,52 @@ pub fn read_throttled() -> Option<Throttled> {
         .and_then(parse_throttled)
 }
 
+/// Human summary of the firmware throttling flags; `true` when anything was reported.
+pub fn throttle_summary(th: Throttled, lang: crate::i18n::Language) -> (String, bool) {
+    let t = crate::i18n::texts(lang);
+    if !th.any() {
+        return (t.thr_ok.to_string(), false);
+    }
+    let mut now = Vec::new();
+    let mut boot = Vec::new();
+    for (active, past, name) in [
+        (
+            th.undervoltage_now(),
+            th.undervoltage_since_boot(),
+            t.thr_uv,
+        ),
+        (
+            th.freq_capped_now(),
+            th.freq_capped_since_boot(),
+            t.thr_capped,
+        ),
+        (
+            th.throttled_now(),
+            th.throttled_since_boot(),
+            t.thr_throttled,
+        ),
+        (
+            th.soft_temp_limit_now(),
+            th.soft_temp_limit_since_boot(),
+            t.thr_soft,
+        ),
+    ] {
+        if active {
+            now.push(name);
+        } else if past {
+            boot.push(name);
+        }
+    }
+    let mut parts = Vec::new();
+    if !now.is_empty() {
+        parts.push(format!("{} ({})", now.join(", "), t.thr_now));
+    }
+    if !boot.is_empty() {
+        parts.push(format!("{} ({})", boot.join(", "), t.thr_boot));
+    }
+    (parts.join("; "), true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

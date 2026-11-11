@@ -3,12 +3,14 @@ pub mod board;
 pub mod doctor;
 pub mod gpio_lab;
 pub mod gpu;
+pub mod help;
 pub mod i18n;
 pub mod overclock;
 pub mod pinout;
 pub mod power;
 pub mod privileged;
 pub mod settings;
+pub mod snapshot;
 pub mod stability;
 pub mod system_colors;
 pub mod telemetry;
@@ -37,6 +39,11 @@ fn main() -> eframe::Result<()> {
     } else {
         None
     };
+
+    if args.iter().any(|a| a == "--json") {
+        println!("{}", crate::snapshot::json());
+        return Ok(());
+    }
 
     if args.iter().any(|a| a == "--doctor") {
         print!("{}", crate::doctor::report());

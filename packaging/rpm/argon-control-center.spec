@@ -63,6 +63,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_modulesloaddir}/argon-control-center.conf
 %dir %{_prefix}/lib/argon-control-center
 %{_prefix}/lib/argon-control-center/setup-permissions.sh
+%{_datadir}/plasma/plasmoids/org.argon.controlcenter.*
 
 %changelog
 * Wed Nov 11 2026 wendelmax - 0.1.0-1

@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.storage",
+        "Name": "Argon Storage",
+        "Name[pt_BR]": "Argon Armazenamento",
+        "Description": "Usage of every mounted disk.",
+        "Description[pt_BR]": "Uso de cada disco montado.",
+        "Icon": "drive-harddisk",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.2.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
