@@ -1,5 +1,5 @@
 Name:           argon-control-center
-Version:        0.4.0
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Raspberry Pi & Argon40 hardware control center
 License:        MIT
@@ -73,6 +73,9 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_mandir}/man1/argon-control-center.1*
 
 %changelog
+* Wed Nov 11 2026 wendelmax - 0.5.0-1
+- Release 0.5.0
+
 * Wed Nov 11 2026 wendelmax - 0.4.0-1
 - Release 0.4.0
 
