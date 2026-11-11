@@ -111,9 +111,7 @@ pub struct ArgonControlCenterApp {
     gpio_view_diagram: bool,
     gpio_panel: gpio::GpioPanel,
     gpio_query: String,
-    pinout: Option<PinoutTexture>,
     app_icon: Option<egui::TextureHandle>,
-    pinout_rx: Option<std::sync::mpsc::Receiver<Option<crate::pinout::Pinout>>>,
 
     // Status & Logs
     pub status_message: Option<String>,
@@ -212,18 +210,7 @@ impl ArgonControlCenterApp {
             gpio_view_diagram: true,
             gpio_panel: gpio::GpioPanel::default(),
             gpio_query: String::new(),
-            pinout: None,
             app_icon: None,
-            pinout_rx: {
-                // Pre-render the GPIO pin-out diagram while the app starts.
-                let (tx, rx) = std::sync::mpsc::channel();
-                let ctx = cc.egui_ctx.clone();
-                std::thread::spawn(move || {
-                    let _ = tx.send(crate::pinout::render(900));
-                    ctx.request_repaint();
-                });
-                Some(rx)
-            },
             status_message: None,
             status_is_error: false,
             action_logs: logs,
@@ -382,16 +369,6 @@ impl eframe::App for ArgonControlCenterApp {
         ctx.request_repaint_after(tick_interval);
 
         self.poll_system_palette(ctx);
-        if let Some(rx) = &self.pinout_rx {
-            match rx.try_recv() {
-                Ok(rendered) => {
-                    self.pinout = Some(PinoutTexture::from_render(ctx, rendered));
-                    self.pinout_rx = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.pinout_rx = None,
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            }
-        }
         self.persist_prefs_if_changed();
 
         let pal = self.active_palette();
@@ -2252,7 +2229,6 @@ impl ArgonControlCenterApp {
                 (t.set_hardware, board.summary()),
                 (t.set_color_source, self.kde_palette.describe()),
                 (t.set_settings_file, path),
-                (t.set_credits, crate::pinout::CREDIT.to_string()),
             ] {
                 // Key and value stacked so long values (paths) wrap instead of widening the page.
                 ui.label(RichText::new(key).size(11.5).color(uc().text_secondary));
@@ -4718,36 +4694,6 @@ fn choice_row<T: Copy + PartialEq>(
 
 /// Rendered pin-out diagram kept as a GPU texture. The rasterization (font loading + SVG)
 /// runs on a background thread at start-up, so opening the GPIO lab is instant.
-struct PinoutTexture {
-    texture: Option<egui::TextureHandle>,
-    aspect: f32,
-    pins: [[f32; 4]; 40],
-}
-
-impl PinoutTexture {
-    fn from_render(ctx: &egui::Context, rendered: Option<crate::pinout::Pinout>) -> Self {
-        match rendered {
-            Some(p) => PinoutTexture {
-                texture: Some(ctx.load_texture(
-                    "gpio-pinout",
-                    egui::ColorImage::from_rgba_premultiplied(
-                        [p.width as usize, p.height as usize],
-                        &p.rgba,
-                    ),
-                    egui::TextureOptions::LINEAR,
-                )),
-                aspect: p.height as f32 / p.width as f32,
-                pins: p.pins,
-            },
-            None => PinoutTexture {
-                texture: None,
-                aspect: 1.0,
-                pins: [[0.0; 4]; 40],
-            },
-        }
-    }
-}
-
 /// Radio-button marker drawn with shapes (font independent).
 fn radio_dot(ui: &mut Ui, selected: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
