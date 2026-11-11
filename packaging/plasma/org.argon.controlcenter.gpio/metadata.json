@@ -13,7 +13,7 @@
         ],
         "Category": "System Information",
         "License": "MIT",
-        "Version": "0.3.0",
+        "Version": "0.4.0",
         "Website": "https://github.com/wendelmax/argon-control-center"
     },
     "KPackageStructure": "Plasma/Applet",

@@ -8,6 +8,8 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-11
+
 ### Added
 - Argon GPIO desktop widget: a map of the 40-pin header or a list of chosen pins with live levels, a compact view for panels, and an optional click to toggle pins that are already outputs.
 - `--gpio <bcm>=<0|1>` drives an output pin from scripts and the widget; inputs and pins used by I2C or UART are refused.
@@ -109,7 +111,8 @@ First public release.
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.
 - Hardware access is granted through group membership and udev rules; no setuid binaries or world-writable device nodes are used.
 
-[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/wendelmax/argon-control-center/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/wendelmax/argon-control-center/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/wendelmax/argon-control-center/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wendelmax/argon-control-center/releases/tag/v0.1.0

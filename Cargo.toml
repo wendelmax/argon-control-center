@@ -1,6 +1,6 @@
 [package]
 name = "argon-control-center"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Desktop control center for Raspberry Pi in Argon40 cases: fan curve, telemetry, board-aware overclocking, GPIO lab"
 authors = ["wendelmax"]
