@@ -1,0 +1,35 @@
+# Argon Control Center: read-only GPIO state publisher.
+#
+# Kernels without /dev/gpiomem (Armbian mainline-based kernels, for example) only let root
+# use pinctrl. This service runs `pinctrl get 0-27` once per second and writes the text to
+# /run/argon-control-center/pinctrl.txt, which the application, `--json` and the desktop
+# widget read. It accepts no input and never changes a pin.
+[Unit]
+Description=Argon Control Center GPIO state publisher (read-only)
+Documentation=man:argon-control-center(1)
+ConditionPathExists=!/dev/gpiomem
+ConditionPathExists=/dev/gpiochip0
+
+[Service]
+Type=simple
+RuntimeDirectory=argon-control-center
+RuntimeDirectoryMode=0755
+ExecStart=/bin/sh -c 'command -v pinctrl >/dev/null || exit 0; f=/run/argon-control-center/pinctrl.txt; while :; do pinctrl get 0-27 > "$${f}.tmp" 2>/dev/null && chmod 0644 "$${f}.tmp" && mv -f "$${f}.tmp" "$$f"; sleep 1; done'
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_DAC_OVERRIDE CAP_FOWNER
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

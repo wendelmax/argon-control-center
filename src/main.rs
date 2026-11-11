@@ -46,6 +46,19 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
 
+    if let Some(pos) = args.iter().position(|a| a == "--gpio") {
+        let arg = args.get(pos + 1).map(String::as_str).unwrap_or("");
+        match crate::gpio_lab::drive_output_cli(arg) {
+            Ok(msg) => {
+                println!("{msg}");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("argon-control-center: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
     if args.iter().any(|a| a == "--doctor") {
         print!("{}", crate::doctor::report());
         return Ok(());

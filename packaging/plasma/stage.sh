@@ -14,7 +14,11 @@ for widget in "$HERE"/org.argon.controlcenter.*; do
     cp "$widget/metadata.json" "$out/"
     cp "$widget"/contents/ui/*.qml "$out/contents/ui/"
     cp "$HERE"/common/ArgonData.qml "$HERE"/common/Meter.qml "$HERE"/common/Gauge.qml "$HERE"/common/Spark.qml "$HERE"/common/GaugeGrid.qml "$out/contents/ui/"
-    if [ -f "$widget/.styles" ]; then
+    if [ -d "$widget/contents/config" ]; then
+        # Widget-specific settings (configGeneral.qml comes with its ui/ files).
+        mkdir -p "$out/contents/config"
+        cp "$widget"/contents/config/* "$out/contents/config/"
+    elif [ -f "$widget/.styles" ]; then
         mkdir -p "$out/contents/config"
         cp "$HERE/common/config.qml" "$HERE/common/main.xml" "$out/contents/config/"
         cp "$HERE/common/configGeneral.qml" "$out/contents/ui/"

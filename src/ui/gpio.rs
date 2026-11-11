@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::gpio_lab::{
-    format_console_entry_payload, ConsoleEntry, DataFormat, GpioSerialLabState, HeaderPinKind,
-    LineEnding, LogSource, PhysicalPinDef, PinDirection, PinPull, RPI_40PIN_HEADER,
+    format_console_entry_payload, ConsoleEntry, DataFormat, GpioSerialLabState, GpioSource,
+    HeaderPinKind, LineEnding, LogSource, PhysicalPinDef, PinDirection, PinPull, RPI_40PIN_HEADER,
 };
 use egui::text::{LayoutJob, TextFormat};
 use std::path::Path;
@@ -150,20 +150,12 @@ fn trace_colors() -> [Color32; ANALYZER_MAX_CHANNELS] {
     [uc().green, uc().cyan, uc().orange, uc().amber]
 }
 
-/// Physical header pin of a BCM GPIO number.
 fn physical_pin(bcm: u8) -> Option<&'static PhysicalPinDef> {
-    RPI_40PIN_HEADER
-        .iter()
-        .find(|d| d.kind == HeaderPinKind::Gpio(bcm))
+    crate::gpio_lab::header_pin(bcm)
 }
 
-/// Alternate-function name from the header label, e.g. "SDA1 I2C" in "GPIO 2 (SDA1 I2C)".
 fn pin_function(def: &PhysicalPinDef) -> &'static str {
-    let label = def.label;
-    match (label.find('('), label.rfind(')')) {
-        (Some(a), Some(b)) if b > a => &label[a + 1..b],
-        _ => "",
-    }
+    def.function()
 }
 
 /// Search rules: `17` or `gpio17` is a GPIO (BCM), `p11` a physical pin, anything else
@@ -435,23 +427,20 @@ impl ArgonControlCenterApp {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
 
-            let gpio_ok = self.gpio_lab.hw_access_unlocked;
+            let source = self.gpio_lab.gpio_source;
+            let gpio_ok = source.is_some();
+            let (value, tip) = match source {
+                Some(GpioSource::Pinctrl) => ("", g.status_gpio_ok_tip),
+                Some(GpioSource::Service) => (g.status_read_only, g.status_gpio_service_tip),
+                None => (g.status_no_access, g.status_gpio_off_tip),
+            };
             let r = status_chip(
                 ui,
                 g.status_gpio,
-                if gpio_ok { "" } else { g.status_no_access },
+                value,
                 if gpio_ok { Health::Ok } else { Health::Warn },
             );
-            aorus_tooltip(
-                r,
-                g.status_gpio,
-                if gpio_ok {
-                    g.status_gpio_ok_tip
-                } else {
-                    g.status_gpio_off_tip
-                },
-                Some("pinctrl get 0-27"),
-            );
+            aorus_tooltip(r, g.status_gpio, tip, Some("pinctrl get 0-27"));
 
             let i2c = i2c_health();
             let (value, tip) = match i2c {

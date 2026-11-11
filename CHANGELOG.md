@@ -8,12 +8,20 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+### Added
+- Argon GPIO desktop widget: a map of the 40-pin header or a list of chosen pins with live levels, a compact view for panels, and an optional click to toggle pins that are already outputs.
+- `--gpio <bcm>=<0|1>` drives an output pin from scripts and the widget; inputs and pins used by I2C or UART are refused.
+- `--json` reports the GPIO pins (`gpio.pins`, with mode, pull, level and function), where they came from and whether they can be driven.
+- `argon-control-center-gpio.service`: on kernels without `/dev/gpiomem`, where only root can run `pinctrl`, a hardened read-only service publishes the pin states once per second for the application, `--json` and the widget. The packages and Unlock hardware enable it only when `/dev/gpiomem` is missing.
+- The Power widget warns when the fan's I2C bus is off.
+
 ### Changed
 - The GPIO pin-out diagram is drawn by the application: labels tinted by pin role (3.3V, 5V, GND, GPIO, I2C, UART, SPI, PCM, PWM, Argon, ID EEPROM) with a legend, the interface font, live levels in the pin circles, the mode next to each label, and light and dark theme support. Labels shrink or shorten to fit narrow windows. The third-party `gpio.svg` and its CC BY-SA credit are removed, and the SVG text rendering features are no longer built.
 - The sidebar and top bar show the application icon instead of a gear.
 - GPIO Lab redesigned as a workbench: a toolbar with GPIO, I2C and serial status and a pin search; the pinout (diagram or a table with mode, pull, level and edges) next to an inspector with mode, pull and drive controls and the equivalent `pinctrl`, `gpioget`/`gpioset` and Python commands with a copy button; and a bottom panel with Analyzer, Serial, I2C and Log tabs. Double-clicking a pin toggles an output or adds an input to the analyzer; pins used by I2C or UART are left unchanged. Each tab shows only its own output, and the serial port and the command line have separate inputs.
 
 ### Fixed
+- `--doctor` checks that the GPIO levels can actually be read and driven, instead of only the permissions of `/dev/gpiochip0`.
 - Fan settings no longer report success when the I2C bus is disabled: saving the curve or a manual speed now explains that the fan controller cannot be reached. The Fan page shows a warning with Enable I2C (turns the bus on immediately, adds `dtparam=i2c_arm=on` to config.txt with a backup and restarts argononed), the footer shows Fan: I2C off, `--status` prints a warning and `--json` has a `fan_bus` field.
 - Setting a GPIO input without pull used an argument `pinctrl` rejects (`np` instead of `pn`).
 - `--doctor` tells a disabled I2C bus (enable it in Hardware and reboot) apart from missing permissions.

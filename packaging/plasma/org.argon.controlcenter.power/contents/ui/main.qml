@@ -28,7 +28,7 @@ PlasmoidItem {
             height: width
             radius: width / 2
             color: !root.ready ? Kirigami.Theme.disabledTextColor
-                 : (root.s.power.problem || !root.s.daemon_active) ? Kirigami.Theme.negativeTextColor
+                 : (root.s.power.problem || !root.s.daemon_active || root.s.fan_bus === false) ? Kirigami.Theme.negativeTextColor
                  : Kirigami.Theme.positiveTextColor
         }
     }
@@ -50,13 +50,20 @@ PlasmoidItem {
             color: root.ready && root.s.power.problem ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
         }
         PlasmaComponents.Label {
+            visible: root.ready && root.s.fan_bus === false
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: "Fan: I2C off, the fan is not being controlled"
+            color: Kirigami.Theme.negativeTextColor
+        }
+        PlasmaComponents.Label {
             text: "argononed: " + (root.ready && root.s.daemon_active ? "active" : "stopped")
             color: root.ready && root.s.daemon_active ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
         }
         PlasmaComponents.ToolButton {
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
-            icon.name: "utilities-system-monitor"
+            icon.name: "argon-control-center"
             onClicked: data.openApp()
         }
     }

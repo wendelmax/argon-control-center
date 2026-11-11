@@ -36,6 +36,7 @@ SIZE_KB="$(du -sk "$STAGE" | cut -f1)"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$ARCH/" -e "s/@SIZE@/$SIZE_KB/" \
     packaging/debian/control.in > "$STAGE/DEBIAN/control"
 install -m755 packaging/debian/postinst "$STAGE/DEBIAN/postinst"
+install -m755 packaging/debian/prerm "$STAGE/DEBIAN/prerm"
 install -m755 packaging/debian/postrm "$STAGE/DEBIAN/postrm"
 
 mkdir -p dist

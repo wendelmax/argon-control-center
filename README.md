@@ -98,7 +98,7 @@ The board and the Argon case are detected automatically at startup, so presets a
 - When there is no graphical session (for example over SSH) the application opens a read-only, btop-style terminal interface: cpu, mem, net, gpu and argon boxes with gradient meters and history graphs. See [Terminal interface](#terminal-interface).
 
 **Desktop widgets (KDE Plasma 6)**
-- Eight widgets — CPU, Thermal, GPU, Memory, Network, Storage, Power and System — to place on the desktop or in a panel.
+- Nine widgets — CPU, Thermal, GPU, Memory, Network, Storage, Power, System and GPIO — to place on the desktop or in a panel.
 - Each metric widget offers three styles: bars, gauges (transparent background, sized to the widget) or a two-minute chart. See [Desktop widgets](#desktop-widgets).
 
 ## Compatibility
@@ -243,10 +243,15 @@ On KDE Plasma 6, right-click the desktop or a panel, choose **Add Widgets** and 
 | Argon Memory | RAM and swap | bars, gauges, chart |
 | Argon Network | download and upload | bars, gauges, chart |
 | Argon Storage | usage of each mounted disk | bars, gauges |
-| Argon Power | 5 V supply, firmware throttling flags, argononed | status |
+| Argon Power | 5 V supply, firmware throttling flags, argononed, fan I2C bus | status |
 | Argon System | board, OS, kernel, uptime, load | status |
+| Argon GPIO | live levels of the 40-pin header, or of chosen pins | header map, list |
 
 Choose the style in the widget's **Configure** dialog. The gauges style has a transparent background and sizes its gauges to the widget; the chart keeps the last two minutes. In a panel each widget shows a compact value, and clicking a widget opens the application.
+
+The GPIO widget's settings choose the pins for the list and the panel, and can let a click toggle a pin that is already an output (off by default; inputs and pins used by I2C or UART are never changed). It runs `argon-control-center --gpio <bcm>=<0|1>`, which needs `pinctrl` without a password.
+
+On kernels without `/dev/gpiomem` (Armbian's mainline-based kernels, for example) only root can run `pinctrl`. The packages then enable `argon-control-center-gpio.service`, a hardened service that runs `pinctrl get 0-27` once per second and writes the result to `/run/argon-control-center/pinctrl.txt`. It accepts no input and never changes a pin; the application, `--json` and the widget read it, and changing pins asks for the password.
 
 The widgets read `argon-control-center --json` every two seconds; rates are computed against the previous reading, so each call takes a few milliseconds. The packages install them system-wide; `scripts/install.sh` installs them for the current user.
 

@@ -19,6 +19,9 @@ pub struct Check {
 /// The bus device only exists when I2C is enabled in the firmware.
 const I2C_OFF: &str = "enable I2C in Hardware (dtparam=i2c_arm=on in config.txt) and reboot";
 
+/// Kernels without the Raspberry Pi gpiomem driver only let root run pinctrl.
+const GPIO_NO_GPIOMEM: &str = "this kernel has no /dev/gpiomem: enable the read-only state service (sudo systemctl enable --now argon-control-center-gpio) or run the permission setup";
+
 const SETUP: &str = "sudo /usr/lib/argon-control-center/setup-permissions.sh $USER (or GPIO Lab > Unlock hardware), then log in again";
 
 /// Read + write access for the current user.
@@ -49,10 +52,27 @@ pub fn run() -> Vec<Check> {
             },
         },
         Check {
-            name: "GPIO (/dev/gpiochip0)",
-            enables: "GPIO lab",
-            ok: rw("/dev/gpiochip0"),
-            fix: SETUP,
+            name: "GPIO levels (pinctrl)",
+            enables: "GPIO lab, GPIO widget",
+            ok: crate::gpio_lab::pinctrl_states().is_some(),
+            fix: if Path::new("/dev/gpiomem").exists() {
+                SETUP
+            } else {
+                GPIO_NO_GPIOMEM
+            },
+        },
+        Check {
+            name: "GPIO without password",
+            enables: "driving pins from --gpio and the widget",
+            ok: matches!(
+                crate::gpio_lab::pinctrl_states(),
+                Some((_, crate::gpio_lab::GpioSource::Pinctrl))
+            ),
+            fix: if Path::new("/dev/gpiomem").exists() {
+                SETUP
+            } else {
+                "this kernel has no /dev/gpiomem; pins can only be driven from the GPIO Lab (with the password) or with a Raspberry Pi kernel"
+            },
         },
         Check {
             name: "Firmware mailbox (/dev/vcio)",
