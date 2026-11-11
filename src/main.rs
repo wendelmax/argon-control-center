@@ -3,6 +3,7 @@ pub mod board;
 pub mod doctor;
 pub mod gpio_lab;
 pub mod gpu;
+pub mod help;
 pub mod i18n;
 pub mod overclock;
 pub mod pinout;

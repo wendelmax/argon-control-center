@@ -27,6 +27,7 @@ Monitor the system, tune the fan curve, overclock safely and manage hardware fea
 - [Installation](#installation)
 - [Usage](#usage)
 - [Safe overclocking](#safe-overclocking)
+- [Desktop widgets](#desktop-widgets)
 - [Configuration](#configuration)
 - [Permissions](#permissions)
 - [Building from source](#building-from-source)
@@ -88,6 +89,11 @@ The board and the Argon case are detected automatically at startup, so presets a
 - Sidebar or top-tab navigation, system or AORUS color scheme, and three dashboard styles, all configurable in Settings.
 - Light and dark desktop themes on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, with enforced text contrast.
 - Interface scaling from 80% to 150%; layouts adapt to narrow windows.
+- Built-in Help page explaining every feature, with links to the related pages.
+
+**Desktop widgets (KDE Plasma 6)**
+- Eight widgets — CPU, Thermal, GPU, Memory, Network, Storage, Power and System — to place on the desktop or in a panel.
+- Each metric widget offers three styles: bars, gauges (transparent background, sized to the widget) or a two-minute chart. See [Desktop widgets](#desktop-widgets).
 
 ## Compatibility
 
@@ -156,6 +162,7 @@ argon-control-center
 | Option | Description |
 |---|---|
 | `--status`, `-s` | Print telemetry, detected hardware, power events and the current overclock, then exit |
+| `--json` | Print a one-line JSON snapshot (CPU, temperature, fan, memory, disks, network, GPU, power flags, system) for scripts and widgets |
 | `--doctor` | Report which hardware interfaces and tools are available to the current user, and how to enable the missing ones |
 | `--stress <seconds>` | Run the stability test without the interface; exits with status 1 if the result is not stable |
 | `--pt`, `--lang=pt` | Start in Brazilian Portuguese |
@@ -193,6 +200,25 @@ argon-control-center --stress 180
 ```
 
 Each page saves only its own settings: saving hardware interfaces never writes overclock values, and saving an overclock never changes interfaces.
+
+## Desktop widgets
+
+On KDE Plasma 6, right-click the desktop or a panel, choose **Add Widgets** and search for **Argon**.
+
+| Widget | Shows | Styles |
+|---|---|---|
+| Argon CPU | total and per-core load, clock, governor | bars, gauges, chart |
+| Argon Thermal | SoC temperature, fan duty | bars, gauges, chart |
+| Argon GPU | render and geometry load, CMA memory, GPU clock | bars, gauges, chart |
+| Argon Memory | RAM and swap | bars, gauges, chart |
+| Argon Network | download and upload | bars, gauges, chart |
+| Argon Storage | usage of each mounted disk | bars, gauges |
+| Argon Power | 5 V supply, firmware throttling flags, argononed | status |
+| Argon System | board, OS, kernel, uptime, load | status |
+
+Choose the style in the widget's **Configure** dialog. The gauges style has a transparent background and sizes its gauges to the widget; the chart keeps the last two minutes. In a panel each widget shows a compact value, and clicking a widget opens the application.
+
+The widgets read `argon-control-center --json` every two seconds; rates are computed against the previous reading, so each call takes a few milliseconds. The packages install them system-wide; `scripts/install.sh` installs them for the current user.
 
 ## Configuration
 
@@ -333,12 +359,15 @@ src/
   privileged.rs      Polkit elevation and atomic writes
   gpu.rs             V3D load, CMA memory and firmware values (vcgencmd)
   doctor.rs          hardware access self-check
+  snapshot.rs        one-shot JSON snapshot (--json) for widgets and scripts
+  help.rs            in-app help content (English and Portuguese)
   pinout.rs          GPIO pin-out diagram rendering and pin positions
   power.rs           5 V supply monitoring
   stability.rs       CPU stability test
   tryboot.rs         trial boot for firmware overclocking
 assets/              pin-out diagram and asset credits
 packaging/           Debian, RPM and Arch packaging, udev rules, permission setup
+  plasma/            Plasma 6 widgets; shared components in common/, assembled by stage.sh
 scripts/             install, version bump and release notes helpers
 .github/workflows/   CI and package/release pipelines
 ```

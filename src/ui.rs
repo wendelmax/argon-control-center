@@ -39,6 +39,7 @@ pub enum ActiveTab {
     GpioLab,
     ServicesAndConfig,
     Settings,
+    Help,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -451,6 +452,7 @@ impl eframe::App for ArgonControlCenterApp {
                         ActiveTab::GpioLab => self.draw_gpio_lab_tab(ui),
                         ActiveTab::ServicesAndConfig => self.draw_services_tab(ui),
                         ActiveTab::Settings => self.draw_settings_tab(ui, ctx),
+                        ActiveTab::Help => self.draw_help_tab(ui),
                     });
             });
     }
@@ -2033,6 +2035,38 @@ impl ArgonControlCenterApp {
     // =========================================================================
     // SETTINGS: appearance, language, units, about
     // =========================================================================
+    // Help: one collapsible section per feature, each linking to its page.
+    fn draw_help_tab(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let mut go: Option<ActiveTab> = None;
+        aorus_card_with_tip(ui, t.help_title, t.help_tip, uc().cyan, |ui| {
+            for (i, sec) in crate::help::sections(self.lang).iter().enumerate() {
+                egui::CollapsingHeader::new(RichText::new(sec.title).strong().color(uc().heading))
+                    .id_salt(("help", i))
+                    .default_open(i == 0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(RichText::new(sec.body).color(uc().text_primary))
+                                .wrap(),
+                        );
+                        if let Some(page) = sec.page {
+                            if page != ActiveTab::Help
+                                && ui
+                                    .button(RichText::new(t.help_open_page).strong())
+                                    .clicked()
+                            {
+                                go = Some(page);
+                            }
+                        }
+                        ui.add_space(4.0);
+                    });
+            }
+        });
+        if let Some(tab) = go {
+            self.active_tab = tab;
+        }
+    }
+
     fn draw_settings_tab(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let t = texts(self.lang);
         let mut restyle = false;
@@ -5431,7 +5465,7 @@ fn tint(accent: Color32) -> Color32 {
 }
 
 /// Navigation entries in display order: (tab, label, tooltip).
-fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 7] {
+fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 8] {
     let t = texts(lang);
     [
         (ActiveTab::Dashboard, t.tab_dashboard, t.tab_dashboard_tip),
@@ -5449,6 +5483,7 @@ fn nav_tabs(lang: Language) -> [(ActiveTab, &'static str, &'static str); 7] {
             t.tab_services_tip,
         ),
         (ActiveTab::Settings, t.tab_settings, t.tab_settings_tip),
+        (ActiveTab::Help, t.tab_help, t.tab_help_tip),
     ]
 }
 
