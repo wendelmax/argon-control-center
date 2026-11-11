@@ -1052,7 +1052,7 @@ impl ArgonControlCenterApp {
                     info_pairs_row(ui, &misc);
                     // Throttling status on its own line (can be long).
                     if let Some(th) = fw.throttled {
-                        let (text, bad) = throttle_summary(th, self.lang);
+                        let (text, bad) = crate::gpu::throttle_summary(th, self.lang);
                         info_row(
                             ui,
                             t.mt_throttle,
@@ -2889,7 +2889,7 @@ impl ArgonControlCenterApp {
                 .wrap(),
             );
             if let Some(th) = self.telemetry.firmware.throttled {
-                let (text, _) = throttle_summary(th, self.lang);
+                let (text, _) = crate::gpu::throttle_summary(th, self.lang);
                 ui.label(
                     RichText::new(format!("{}: {text}", t.mt_throttle))
                         .size(12.0)
@@ -5792,52 +5792,6 @@ fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut 
         ui.add_space(6.0);
         right(ui);
     }
-}
-
-/// Human summary of the firmware throttling flags; `true` when anything was reported.
-fn throttle_summary(th: crate::gpu::Throttled, lang: Language) -> (String, bool) {
-    let t = texts(lang);
-    if !th.any() {
-        return (t.thr_ok.to_string(), false);
-    }
-    let mut now = Vec::new();
-    let mut boot = Vec::new();
-    for (active, past, name) in [
-        (
-            th.undervoltage_now(),
-            th.undervoltage_since_boot(),
-            t.thr_uv,
-        ),
-        (
-            th.freq_capped_now(),
-            th.freq_capped_since_boot(),
-            t.thr_capped,
-        ),
-        (
-            th.throttled_now(),
-            th.throttled_since_boot(),
-            t.thr_throttled,
-        ),
-        (
-            th.soft_temp_limit_now(),
-            th.soft_temp_limit_since_boot(),
-            t.thr_soft,
-        ),
-    ] {
-        if active {
-            now.push(name);
-        } else if past {
-            boot.push(name);
-        }
-    }
-    let mut parts = Vec::new();
-    if !now.is_empty() {
-        parts.push(format!("{} ({})", now.join(", "), t.thr_now));
-    }
-    if !boot.is_empty() {
-        parts.push(format!("{} ({})", boot.join(", "), t.thr_boot));
-    }
-    (parts.join("; "), true)
 }
 
 /// Several `key value` pairs on one line, in equal-width cells (related values grouped).
