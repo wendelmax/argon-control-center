@@ -105,9 +105,22 @@ PlasmoidItem {
         }
     }
 
-    fullRepresentation: ColumnLayout {
-        Layout.minimumWidth: Kirigami.Units.gridUnit * (root.style === "map" ? 16 : 12)
-        Layout.preferredWidth: Kirigami.Units.gridUnit * (root.style === "map" ? 22 : 16)
+    fullRepresentation: Item {
+        id: full
+        readonly property real unit: Kirigami.Units.gridUnit
+        // Height of the content for each style, so Plasma sizes the background to fit.
+        readonly property real contentHeight: root.style === "map"
+            ? unit * 1.8 + (unit * 1.25) * 2 + Kirigami.Units.smallSpacing + unit * 2.2
+            : unit * 1.8 + Math.max(1, root.chosen.length) * unit * 2.6 + unit * 2.2
+        Layout.minimumWidth: unit * (root.style === "map" ? 16 : 12)
+        Layout.minimumHeight: contentHeight
+        Layout.preferredWidth: unit * (root.style === "map" ? 24 : 16)
+        Layout.preferredHeight: contentHeight + Kirigami.Units.largeSpacing
+
+    ColumnLayout {
+        id: content
+        anchors.fill: parent
+        anchors.margins: Kirigami.Units.smallSpacing
         spacing: Kirigami.Units.smallSpacing
 
         RowLayout {
@@ -132,12 +145,13 @@ PlasmoidItem {
         GridLayout {
             id: map
             visible: root.style === "map" && root.gpio !== null
-            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignHCenter
             columns: 20
             rowSpacing: Kirigami.Units.smallSpacing
             columnSpacing: Kirigami.Units.smallSpacing / 2
+            // From the content width (not the map's own width), between 0.9 and 2 grid units.
             readonly property real cell: Math.max(Kirigami.Units.gridUnit * 0.9,
-                (width - columnSpacing * 19) / 20)
+                Math.min(Kirigami.Units.gridUnit * 2, (content.width - columnSpacing * 19) / 20))
             Repeater {
                 // Row 1: even pins (2, 4 ... 40); row 2: odd pins (1, 3 ... 39).
                 model: 40
@@ -218,11 +232,14 @@ PlasmoidItem {
             }
         }
 
+        Item { Layout.fillHeight: true }
+
         PlasmaComponents.ToolButton {
             Layout.alignment: Qt.AlignRight
             text: "GPIO Lab"
             icon.name: "argon-control-center"
             onClicked: data.openApp()
         }
+    }
     }
 }
