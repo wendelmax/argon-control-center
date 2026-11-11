@@ -53,10 +53,8 @@ asset() {
 }
 
 DEB_ARM="$(asset "*_${VERSION}_arm64.deb" "argon-control-center_${VERSION}_arm64.deb")"
-DEB_AMD="$(asset "*_${VERSION}_amd64.deb" "argon-control-center_${VERSION}_amd64.deb")"
 RPM_ARM="$(asset "*-${VERSION}-*.aarch64.rpm" "argon-control-center-${VERSION}-1.aarch64.rpm")"
-RPM_X86="$(asset "*-${VERSION}-*.x86_64.rpm" "argon-control-center-${VERSION}-1.x86_64.rpm")"
-ARCH_PKG="$(asset "argon-control-center-${VERSION}-*.pkg.tar.zst" "argon-control-center-${VERSION}-1-x86_64.pkg.tar.zst")"
+ARCH_PKG="$(asset "argon-control-center-${VERSION}-*.pkg.tar.zst" "argon-control-center-${VERSION}-1-aarch64.pkg.tar.zst")"
 
 {
     BODY="$(changelog_section)"
@@ -68,13 +66,13 @@ ARCH_PKG="$(asset "argon-control-center-${VERSION}-*.pkg.tar.zst" "argon-control
     cat <<EOF
 ## Installation
 
-| Distribution | Architecture | Package |
-|---|---|---|
-| Debian, Ubuntu, Raspberry Pi OS, Armbian | arm64 | \`$DEB_ARM\` |
-| Debian, Ubuntu | amd64 | \`$DEB_AMD\` |
-| Fedora | aarch64 | \`$RPM_ARM\` |
-| Fedora | x86_64 | \`$RPM_X86\` |
-| Arch Linux | x86_64 | \`$ARCH_PKG\` |
+Packages are built for 64-bit Raspberry Pi systems (Raspberry Pi 3, 4, 5 and compatible boards running a 64-bit OS).
+
+| Distribution | Package |
+|---|---|
+| Raspberry Pi OS, Armbian, Debian, Ubuntu (arm64) | \`$DEB_ARM\` |
+| Fedora (aarch64) | \`$RPM_ARM\` |
+| Arch Linux ARM (aarch64) | \`$ARCH_PKG\` |
 
 Debian / Ubuntu:
 
@@ -88,7 +86,7 @@ Fedora:
 sudo dnf install ./$RPM_ARM
 \`\`\`
 
-Arch Linux (x86_64 package, or build from \`packaging/arch/PKGBUILD\` on Arch Linux ARM):
+Arch Linux ARM:
 
 \`\`\`sh
 sudo pacman -U ./$ARCH_PKG

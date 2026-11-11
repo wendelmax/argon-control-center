@@ -12,7 +12,7 @@ Monitor the system, tune the fan curve, overclock safely and manage hardware fea
 [![Packages](https://github.com/wendelmax/argon-control-center/actions/workflows/package.yml/badge.svg)](https://github.com/wendelmax/argon-control-center/actions/workflows/package.yml)
 [![Release](https://img.shields.io/github/v/release/wendelmax/argon-control-center?sort=semver)](https://github.com/wendelmax/argon-control-center/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Linux%20arm64%20%7C%20x86__64-informational)
+![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%20arm64-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 
 [Installation](#installation) · [Usage](#usage) · [Documentation](#configuration) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/wendelmax/argon-control-center/releases)
@@ -111,7 +111,7 @@ The board and the Argon case are detected automatically at startup, so presets a
 | Raspberry Pi 4, 400, CM4 | BCM2711 | 1500 MHz | 1800 MHz | 2000 MHz | 2147 MHz |
 | Raspberry Pi 3, Zero 2 W | BCM2837 | 1000 MHz | 1400 MHz | 1450 MHz | 1500 MHz |
 
-Other Linux systems (ARM or x86_64) can run the monitoring features; Raspberry Pi specific features are disabled.
+Packages target 64-bit Raspberry Pi systems. Building from source on other Linux machines works for development; the monitoring features run there and Raspberry Pi specific features are disabled.
 
 ### Argon40 cases
 
@@ -131,14 +131,13 @@ Packaged for Debian, Ubuntu, Raspberry Pi OS, Armbian, Fedora and Arch Linux. Re
 
 ### Packages
 
-Download the package for your distribution from the [latest release](https://github.com/wendelmax/argon-control-center/releases/latest).
+Download the package for your distribution from the [latest release](https://github.com/wendelmax/argon-control-center/releases/latest). Packages are built for 64-bit ARM (Raspberry Pi 3, 4, 5 with a 64-bit OS).
 
 | Distribution | Command |
 |---|---|
 | Debian, Ubuntu, Raspberry Pi OS, Armbian | `sudo apt install ./argon-control-center_<version>_arm64.deb` |
-| Fedora | `sudo dnf install ./argon-control-center-<version>-1.<arch>.rpm` |
-| Arch Linux (x86_64) | `sudo pacman -U ./argon-control-center-<version>-1-x86_64.pkg.tar.zst` |
-| Arch Linux ARM | build `packaging/arch/PKGBUILD` with `makepkg -si` |
+| Fedora | `sudo dnf install ./argon-control-center-<version>-1.<dist>.aarch64.rpm` |
+| Arch Linux ARM | `sudo pacman -U ./argon-control-center-<version>-1-aarch64.pkg.tar.zst` |
 
 The packages install the application, its menu entry and the hardware access rules (see [Permissions](#permissions)). Log out and back in once after installing.
 
@@ -348,7 +347,7 @@ cargo test print_board -- --ignored --nocapture     # print detected hardware
 cargo test print_detected -- --ignored --nocapture  # print detected desktop colors
 ```
 
-Continuous integration runs formatting, clippy, tests and a release build on x86_64 and ARM64 for every pull request. Changes to packaging also build, install and test the Debian, Fedora and Arch packages.
+Continuous integration runs formatting, clippy, tests and a release build on ARM64 (the Raspberry Pi architecture) for every pull request. Changes to packaging also build, install and test the Debian, Fedora and Arch packages.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `ci:`).
 

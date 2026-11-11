@@ -16,13 +16,11 @@ permissions:
   contents: write
 
 jobs:
+  # Packages are built only for the Raspberry Pi architecture (64-bit ARM),
+  # natively on GitHub's ARM64 runners.
   deb:
-    name: .deb (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+    name: .deb (arm64)
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - name: Build dependencies
@@ -44,16 +42,12 @@ jobs:
           sudo apt-get remove -y argon-control-center
       - uses: actions/upload-artifact@v4
         with:
-          name: deb-${{ matrix.os }}
+          name: deb-arm64
           path: dist/*.deb
 
   rpm:
-    name: .rpm Fedora (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+    name: .rpm Fedora (aarch64)
+    runs-on: ubuntu-24.04-arm
     container: fedora:latest
     steps:
       - name: Tooling
@@ -78,16 +72,19 @@ jobs:
           mkdir -p dist && cp ~/rpmbuild/RPMS/*/argon-control-center-*.rpm dist/
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-${{ matrix.os }}
+          name: rpm-aarch64
           path: dist/*.rpm
 
   arch:
-    name: Arch Linux package (x86_64)
-    runs-on: ubuntu-24.04
-    container: archlinux:latest
+    name: Arch Linux ARM package (aarch64)
+    runs-on: ubuntu-24.04-arm
+    # Arch Linux ARM base image (the official archlinux image is x86_64 only).
+    container: menci/archlinuxarm:base-devel
     steps:
       - name: Tooling
         run: |
+          pacman-key --init
+          pacman-key --populate archlinuxarm
           pacman -Syu --noconfirm --needed base-devel git cargo libglvnd libxkbcommon wayland libx11
           useradd -m builder
       - uses: actions/checkout@v4
@@ -109,7 +106,7 @@ jobs:
           mkdir -p dist && cp /home/builder/pkg/argon-control-center-*.pkg.tar.zst dist/
       - uses: actions/upload-artifact@v4
         with:
-          name: arch-x86_64
+          name: arch-aarch64
           path: dist/*.pkg.tar.zst
 
   release:

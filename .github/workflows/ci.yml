@@ -10,13 +10,9 @@ env:
 
 jobs:
   check:
-    name: fmt · clippy · test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        # x86_64 + native ARM64 (same architecture as the Raspberry Pi)
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+    name: fmt · clippy · test (arm64)
+    # Native ARM64, the same architecture as the Raspberry Pi.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
