@@ -476,10 +476,84 @@ pub fn update_boot_config_str_for(
     out_lines.join("\n") + "\n"
 }
 
-pub fn save_boot_config(cfg: &BootOcConfig) -> Result<String, String> {
+impl BootOcConfig {
+    /// Copies only the clock / voltage fields from `from`.
+    pub fn with_oc_from(mut self, from: &BootOcConfig) -> Self {
+        self.arm_freq_mhz = from.arm_freq_mhz;
+        self.gpu_freq_mhz = from.gpu_freq_mhz;
+        self.over_voltage = from.over_voltage;
+        self.over_voltage_delta_uv = from.over_voltage_delta_uv;
+        self.arm_boost = from.arm_boost;
+        self.force_turbo = from.force_turbo;
+        self.temp_limit_c = from.temp_limit_c;
+        self
+    }
+
+    /// Copies only the hardware interface / overlay toggles from `from`.
+    pub fn with_features_from(mut self, from: &BootOcConfig) -> Self {
+        self.i2c_arm = from.i2c_arm;
+        self.spi = from.spi;
+        self.i2s = from.i2s;
+        self.onboard_audio = from.onboard_audio;
+        self.enable_uart = from.enable_uart;
+        self.vc4_kms_v3d = from.vc4_kms_v3d;
+        self.camera_auto_detect = from.camera_auto_detect;
+        self.display_auto_detect = from.display_auto_detect;
+        self.argon_blstr_dac = from.argon_blstr_dac;
+        self.argon_ir_receiver = from.argon_ir_receiver;
+        self
+    }
+
+    /// True when clocks or voltages go beyond the board's factory settings, i.e. the change can
+    /// make the system unstable or unbootable.
+    pub fn exceeds_stock(&self, p: &OcProfile) -> bool {
+        self.arm_freq_mhz > p.stock_mhz
+            || self.gpu_freq_mhz > p.gpu_stock_mhz
+            || self.over_voltage > 0
+            || self.over_voltage_delta_uv > 0
+            || self.force_turbo
+    }
+}
+
+/// Which part of `config.txt` a save touches. Each page only writes its own fields, merged
+/// into what is currently in the file, so unsaved edits from another page never leak in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigScope {
+    Overclock,
+    Features,
+}
+
+/// Returns the new `config.txt` content for `scope`, starting from `current_file`.
+pub fn render_scoped_config(
+    current_file: &str,
+    ui_cfg: &BootOcConfig,
+    scope: ConfigScope,
+) -> String {
+    render_scoped_config_for(current_file, ui_cfg, scope, &crate::board::current().oc)
+}
+
+pub fn render_scoped_config_for(
+    current_file: &str,
+    ui_cfg: &BootOcConfig,
+    scope: ConfigScope,
+    profile: &OcProfile,
+) -> String {
+    let on_disk = parse_boot_config_str_for(current_file, profile);
+    let merged = match scope {
+        ConfigScope::Overclock => on_disk.with_oc_from(ui_cfg),
+        ConfigScope::Features => on_disk.with_features_from(ui_cfg),
+    };
+    update_boot_config_str_for(current_file, &merged, profile)
+}
+
+/// Writes only the fields of `scope` to `config.txt` (backup kept as `config.txt.argoncc.bak`).
+pub fn save_boot_config_scoped(
+    ui_cfg: &BootOcConfig,
+    scope: ConfigScope,
+) -> Result<String, String> {
     let path = get_boot_config_path();
     let original = fs::read_to_string(path).unwrap_or_default();
-    let updated = update_boot_config_str(&original, cfg);
+    let updated = render_scoped_config(&original, ui_cfg, scope);
     write_privileged_file(path, &updated, None)
 }
 
@@ -538,6 +612,39 @@ mod tests {
         assert_eq!(reparsed.over_voltage, 4);
         assert!(reparsed.spi);
         assert!(reparsed.argon_blstr_dac);
+    }
+
+    #[test]
+    fn features_save_never_writes_unsaved_overclock() {
+        let pi4 = OcProfile::for_soc(Soc::Bcm2711);
+        let file = "#dtparam=i2c_arm=on\narm_boost=1\n";
+        // The user clicked an OC preset somewhere (in memory only) and then enabled I2C.
+        let mut ui_cfg = parse_boot_config_str_for(file, &pi4);
+        ui_cfg.apply_preset_for(OcPreset::OcGaming, &pi4);
+        ui_cfg.i2c_arm = true;
+
+        let out = render_scoped_config_for(file, &ui_cfg, ConfigScope::Features, &pi4);
+        assert!(out.contains("dtparam=i2c_arm=on"));
+        assert!(!out.contains("arm_freq=2000"), "{out}");
+        assert!(!out.contains("over_voltage="), "{out}");
+
+        let out = render_scoped_config_for(file, &ui_cfg, ConfigScope::Overclock, &pi4);
+        assert!(out.contains("arm_freq=2000"));
+        assert!(
+            out.contains("#dtparam=i2c_arm=on"),
+            "OC save must not enable I2C: {out}"
+        );
+    }
+
+    #[test]
+    fn exceeds_stock_detects_risky_changes() {
+        let pi4 = OcProfile::for_soc(Soc::Bcm2711);
+        let mut c = BootOcConfig::default_for(&pi4);
+        assert!(!c.exceeds_stock(&pi4));
+        c.apply_preset_for(OcPreset::EcoPowerSave, &pi4);
+        assert!(!c.exceeds_stock(&pi4));
+        c.apply_preset_for(OcPreset::OcGaming, &pi4);
+        assert!(c.exceeds_stock(&pi4));
     }
 
     #[test]
