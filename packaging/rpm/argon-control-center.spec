@@ -59,6 +59,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+%{_metainfodir}/io.github.wendelmax.argon_control_center.metainfo.xml
 %{_udevrulesdir}/60-argon-control-center.rules
 %{_sysusersdir}/argon-control-center.conf
 %{_modulesloaddir}/argon-control-center.conf

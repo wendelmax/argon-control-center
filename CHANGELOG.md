@@ -11,6 +11,7 @@ Release notes on GitHub are generated from the section matching the tag.
 ### Added
 - AUR package `argon-control-center`, updated automatically after each release.
 - Fedora COPR repository `wendelmax/argon-control-center`, built from each release tag.
+- AppStream metadata (`io.github.wendelmax.argon_control_center`), so software centers such as Discover and GNOME Software list the application. `bump-version.sh` adds each release to it and CI validates it with the desktop entry.
 
 ### Changed
 - Packages and CI target only 64-bit ARM, the Raspberry Pi architecture: `.deb` (arm64), `.rpm` (aarch64) and a new Arch Linux ARM package (aarch64). The x86_64 packages are no longer published.

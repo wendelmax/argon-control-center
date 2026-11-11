@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 wendelmax -->
+<component type="desktop-application">
+  <id>io.github.wendelmax.argon_control_center</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Argon Control Center</name>
+  <summary>Monitor and tune a Raspberry Pi in an Argon40 case</summary>
+  <summary xml:lang="pt_BR">Monitore e ajuste um Raspberry Pi em gabinete Argon40</summary>
+
+  <developer id="io.github.wendelmax">
+    <name>wendelmax</name>
+  </developer>
+
+  <description>
+    <p>
+      Argon Control Center is a native control center for Raspberry Pi computers in
+      Argon40 cases. It detects the board and the case automatically and brings
+      telemetry, cooling, overclocking and hardware settings together in one window.
+    </p>
+    <ul>
+      <li>Live CPU, temperature, memory, disk, network and GPU telemetry in three dashboard styles</li>
+      <li>Fan curve editor for the Argon daemon, with profiles and manual control</li>
+      <li>Board-aware overclocking with a power-supply guard, a trial boot and a stability test</li>
+      <li>config.txt hardware options: I2C, SPI, UART, audio, camera and display detection</li>
+      <li>GPIO lab with a live 40-pin diagram and a serial and I2C console</li>
+      <li>KDE Plasma widgets, a terminal interface and a JSON output for scripts</li>
+    </ul>
+    <p>
+      Hardware access uses udev rules and groups; system files are changed through Polkit
+      with a backup of the previous version.
+    </p>
+    <p xml:lang="pt_BR">
+      O Argon Control Center é uma central de controle nativa para Raspberry Pi em
+      gabinetes Argon40. Ele detecta a placa e o gabinete automaticamente e reúne
+      telemetria, refrigeração, overclock e ajustes de hardware em uma janela.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">argon-control-center.desktop</launchable>
+
+  <provides>
+    <binary>argon-control-center</binary>
+  </provides>
+
+  <categories>
+    <category>System</category>
+    <category>Monitor</category>
+  </categories>
+
+  <keywords>
+    <keyword>Raspberry Pi</keyword>
+    <keyword>Argon</keyword>
+    <keyword>fan</keyword>
+    <keyword>overclock</keyword>
+    <keyword>GPIO</keyword>
+    <keyword>monitor</keyword>
+  </keywords>
+
+  <url type="homepage">https://github.com/wendelmax/argon-control-center</url>
+  <url type="bugtracker">https://github.com/wendelmax/argon-control-center/issues</url>
+  <url type="vcs-browser">https://github.com/wendelmax/argon-control-center</url>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">480</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.2.0" date="2026-11-11">
+      <url type="details">https://github.com/wendelmax/argon-control-center/releases/tag/v0.2.0</url>
+    </release>
+    <release version="0.1.0" date="2026-11-11">
+      <url type="details">https://github.com/wendelmax/argon-control-center/releases/tag/v0.1.0</url>
+    </release>
+  </releases>
+</component>
