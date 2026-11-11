@@ -163,11 +163,17 @@ impl ArgonControlCenterApp {
 
         aorus_card_with_tip(ui, f.live, f.live_tip, uc().cyan, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(28.0, 10.0);
+                // Spread the four items over the width when they fit; otherwise wrap.
+                let gap = ((ui.available_width() - 6e+02) / 4.0).max(28.0);
+                let half = gap / 2.0;
+                ui.spacing_mut().item_spacing = Vec2::new(0.0, 10.0);
+                ui.add_space(half);
                 draw_fan_rotor(ui, angle, duty, driven);
+                ui.add_space(gap);
                 draw_temp_gauge(ui, temp, &thresholds, f.temperature);
 
                 // Duty readout.
+                ui.add_space(gap);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, 110.0), Sense::hover());
                 let p = ui.painter_at(rect);
                 p.text(
@@ -201,6 +207,7 @@ impl ArgonControlCenterApp {
                 );
 
                 // Status lines.
+                ui.add_space(gap);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(190.0, 110.0), Sense::hover());
                 let p = ui.painter_at(rect);
                 let rows = [
@@ -731,7 +738,7 @@ fn draw_fan_rotor(ui: &mut Ui, angle: f32, duty: u8, driven: bool) {
 }
 
 /// 270° temperature arc with colored zones, the curve thresholds as ticks and the value.
-fn draw_temp_gauge(ui: &mut Ui, temp: f32, thresholds: &[f32], label: &str) {
+pub(super) fn draw_temp_gauge(ui: &mut Ui, temp: f32, thresholds: &[f32], label: &str) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(130.0, 110.0), Sense::hover());
     let p = ui.painter_at(rect);
     let c = Pos2::new(rect.center().x, rect.top() + 58.0);
