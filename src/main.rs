@@ -7,7 +7,6 @@ pub mod help;
 pub mod i18n;
 pub mod icon;
 pub mod overclock;
-pub mod pinout;
 pub mod power;
 pub mod privileged;
 pub mod settings;

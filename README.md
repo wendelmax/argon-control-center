@@ -381,6 +381,7 @@ The release also starts a build in [Fedora COPR](https://copr.fedorainfracloud.o
 src/
   main.rs            entry point and command-line options
   ui.rs              application window, pages and layouts
+  ui/gpio.rs         GPIO Lab page: pin-out diagram, inspector, analyzer, serial, I2C
   board.rs           board, case and overclocking profile detection
   telemetry.rs       sensors from /proc and /sys
   argon.rs           fan curves and Argon MCU access
@@ -396,7 +397,7 @@ src/
   snapshot.rs        one-shot JSON snapshot (--json) for widgets and scripts
   help.rs            in-app help content (English and Portuguese)
   tui.rs             terminal interface (ratatui)
-  pinout.rs          GPIO pin-out diagram rendering and pin positions
+  icon.rs            application icon (window and header)
   power.rs           5 V supply monitoring
   stability.rs       CPU stability test
   tryboot.rs         trial boot for firmware overclocking
@@ -430,6 +431,6 @@ To report a security issue, please use [GitHub private vulnerability reporting](
 
 Released under the [MIT License](LICENSE).
 
-The GPIO pin-out diagram (`assets/gpio.svg`) is by Dirk Koudstaal (element14) and is licensed under Creative Commons Attribution-ShareAlike; see [assets/CREDITS.md](assets/CREDITS.md).
+All artwork, including the application icon and the GPIO pin-out diagram (drawn by the application), is original and covered by the same license; see [assets/CREDITS.md](assets/CREDITS.md).
 
 Argon40, Raspberry Pi and AORUS are trademarks of their respective owners. This project is not affiliated with or endorsed by them.
