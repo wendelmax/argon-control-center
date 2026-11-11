@@ -57,6 +57,16 @@ pub fn count_events(kernel_log: &str) -> u32 {
         .count() as u32
 }
 
+/// Under-voltage seen since boot (kernel log, rpi_volt alarm or the firmware flags): the
+/// condition that blocks firmware settings above the factory clock.
+pub fn problem_since_boot(throttled: Option<crate::gpu::Throttled>) -> bool {
+    undervoltage_events_since_boot().unwrap_or(0) > 0
+        || read_alarm().unwrap_or(false)
+        || throttled
+            .map(|t| t.undervoltage_now() || t.undervoltage_since_boot())
+            .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
