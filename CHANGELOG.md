@@ -8,7 +8,7 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-10
+## [0.1.0] - 2026-11-11
 
 First public release.
 

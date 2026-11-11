@@ -65,5 +65,5 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_prefix}/lib/argon-control-center/setup-permissions.sh
 
 %changelog
-* Tue Nov 10 2026 wendelmax - 0.1.0-1
+* Wed Nov 11 2026 wendelmax - 0.1.0-1
 - Initial package
