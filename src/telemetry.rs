@@ -13,7 +13,7 @@ pub struct CpuStatSample {
     pub idle: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiskUsageInfo {
     pub device: String,
     pub mount_point: String,
@@ -412,7 +412,7 @@ fn read_u32_file(path: &str) -> Option<u32> {
     fs::read_to_string(path).ok()?.trim().parse::<u32>().ok()
 }
 
-fn read_os_pretty_name() -> String {
+pub(crate) fn read_os_pretty_name() -> String {
     if let Ok(content) = fs::read_to_string("/etc/os-release") {
         for line in content.lines() {
             if let Some(rest) = line.strip_prefix("PRETTY_NAME=") {
@@ -515,7 +515,7 @@ fn read_net_bytes() -> Option<(u64, u64)> {
     Some((rx_total, tx_total))
 }
 
-fn read_disks() -> Vec<DiskUsageInfo> {
+pub(crate) fn read_disks() -> Vec<DiskUsageInfo> {
     let mut disks = Vec::new();
     if let Ok(out) = Command::new("df").args(["-kP"]).output() {
         let text = String::from_utf8_lossy(&out.stdout);

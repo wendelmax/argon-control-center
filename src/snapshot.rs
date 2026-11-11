@@ -18,6 +18,8 @@ const SLOW_TTL_MS: u64 = 10_000;
 #[derive(Debug, Clone, Serialize)]
 pub struct Snapshot {
     pub board: String,
+    pub system: System,
+    pub disks: Vec<crate::telemetry::DiskUsageInfo>,
     pub cpu: Cpu,
     pub temp_c: f32,
     /// Temperature formatted with the unit chosen in the app settings.
@@ -30,6 +32,14 @@ pub struct Snapshot {
     pub gpu: Gpu,
     pub power: Power,
     pub daemon_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct System {
+    pub os: String,
+    pub kernel: String,
+    pub uptime_s: u64,
+    pub load: [f32; 3],
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,6 +96,8 @@ struct Cache {
     v3d_mhz: Option<u32>,
     throttled: Option<u32>,
     daemon_active: bool,
+    #[serde(default)]
+    disks: Vec<crate::telemetry::DiskUsageInfo>,
 }
 
 fn now_ms() -> u64 {
@@ -242,12 +254,13 @@ pub fn take() -> Snapshot {
 
     // Slow values (processes), refreshed every SLOW_TTL_MS
     let slow_fresh = t.saturating_sub(prev.slow_t_ms) < SLOW_TTL_MS && prev.slow_t_ms > 0;
-    let (slow_t_ms, v3d_mhz, throttled, daemon_active) = if slow_fresh {
+    let (slow_t_ms, v3d_mhz, throttled, daemon_active, disks) = if slow_fresh {
         (
             prev.slow_t_ms,
             prev.v3d_mhz,
             prev.throttled,
             prev.daemon_active,
+            prev.disks.clone(),
         )
     } else {
         let throttled = crate::gpu::read_throttled().map(|th| th.0);
@@ -265,6 +278,7 @@ pub fn take() -> Snapshot {
             v3d,
             throttled,
             crate::argon::get_argononed_service_status().0,
+            crate::telemetry::read_disks(),
         )
     };
 
@@ -281,8 +295,29 @@ pub fn take() -> Snapshot {
         .map(|th| crate::gpu::throttle_summary(crate::gpu::Throttled(th), settings.language))
         .unwrap_or_default();
 
+    let first = |p: &str| fs::read_to_string(p).unwrap_or_default();
+    let loadavg: Vec<f32> = first("/proc/loadavg")
+        .split_whitespace()
+        .take(3)
+        .filter_map(|v| v.parse().ok())
+        .collect();
     let snap = Snapshot {
         board: crate::board::current().summary(),
+        system: System {
+            os: crate::telemetry::read_os_pretty_name(),
+            kernel: first("/proc/sys/kernel/osrelease").trim().to_string(),
+            uptime_s: first("/proc/uptime")
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.0) as u64,
+            load: [
+                loadavg.first().copied().unwrap_or(0.0),
+                loadavg.get(1).copied().unwrap_or(0.0),
+                loadavg.get(2).copied().unwrap_or(0.0),
+            ],
+        },
+        disks: disks.clone(),
         cpu: Cpu {
             total,
             cores,
@@ -324,6 +359,7 @@ pub fn take() -> Snapshot {
         v3d_mhz,
         throttled,
         daemon_active,
+        disks,
     };
     if let Some(dir) = path.parent() {
         let _ = fs::create_dir_all(dir);
