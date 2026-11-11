@@ -283,11 +283,13 @@ pub const RPI_40PIN_HEADER: [PhysicalPinDef; 40] = [
     },
 ];
 
+/// Where a console line comes from; each GPIO Lab tab shows its own source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsoleMode {
-    SerialUart,
-    GpioEdgeMonitor,
-    I2cArgonInspector,
+pub enum LogSource {
+    System,
+    Gpio,
+    Serial,
+    I2c,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -327,6 +329,7 @@ impl LineEnding {
 
 #[derive(Debug, Clone)]
 pub struct ConsoleEntry {
+    pub source: LogSource,
     pub timestamp: String,
     pub direction: &'static str, // "RX", "TX", "EV", "SYS", "ERR"
     pub text: String,
@@ -342,7 +345,8 @@ pub struct GpioSerialLabState {
     pub sim_tick: u64,
 
     // Console state (Arduino Serial Monitor style)
-    pub console_mode: ConsoleMode,
+    /// Log every edge of the analyzer channels.
+    pub log_edges: bool,
     pub available_ports: Vec<String>,
     pub selected_port: String,
     pub baud_rate: u32,
@@ -354,6 +358,8 @@ pub struct GpioSerialLabState {
     pub auto_scroll: bool,
     pub paused: bool,
     pub tx_input: String,
+    /// Command line of the Log tab (help, scan, mcu, gpio, fan, high, low).
+    pub cmd_input: String,
     pub rx_bytes_total: usize,
     pub tx_bytes_total: usize,
     pub entries: VecDeque<ConsoleEntry>,
@@ -470,7 +476,7 @@ impl GpioSerialLabState {
             hw_access_unlocked: false,
             simulate_pulses: false,
             sim_tick: 0,
-            console_mode: ConsoleMode::GpioEdgeMonitor,
+            log_edges: true,
             available_ports,
             selected_port,
             baud_rate: 115200,
@@ -482,6 +488,7 @@ impl GpioSerialLabState {
             auto_scroll: true,
             paused: false,
             tx_input: String::new(),
+            cmd_input: String::new(),
             rx_bytes_total: 0,
             tx_bytes_total: 0,
             entries: VecDeque::new(),
@@ -489,8 +496,9 @@ impl GpioSerialLabState {
         };
 
         s.push_log(
+            LogSource::System,
             "SYS",
-            "Hardware console ready. Select UART Serial, GPIO Edge Monitor or I2C Inspector.",
+            "GPIO Lab ready. Type help in the Log tab to list the commands.",
             b"",
         );
         s.poll_gpio_states();
@@ -506,7 +514,7 @@ impl GpioSerialLabState {
         format!("{m:02}:{s:02}.{ms:03}")
     }
 
-    pub fn push_log(&mut self, direction: &'static str, text: &str, raw: &[u8]) {
+    pub fn push_log(&mut self, source: LogSource, direction: &'static str, text: &str, raw: &[u8]) {
         if self.paused {
             return;
         }
@@ -514,6 +522,7 @@ impl GpioSerialLabState {
             self.entries.pop_front();
         }
         self.entries.push_back(ConsoleEntry {
+            source,
             timestamp: self.format_timestamp(),
             direction,
             text: text.to_string(),
@@ -540,7 +549,7 @@ impl GpioSerialLabState {
             )?
         };
         self.hw_access_unlocked = true;
-        self.push_log("SYS", &res, res.as_bytes());
+        self.push_log(LogSource::System, "SYS", &res, res.as_bytes());
         self.poll_gpio_states();
         Ok(res)
     }
@@ -586,10 +595,10 @@ impl GpioSerialLabState {
                     }
                 }
 
-                if self.console_mode == ConsoleMode::GpioEdgeMonitor {
+                if self.log_edges {
                     for (bcm, ev_desc) in edge_events {
                         let msg = format!("GPIO{bcm:02} | {ev_desc}");
-                        self.push_log("EV", &msg, msg.as_bytes());
+                        self.push_log(LogSource::Gpio, "EV", &msg, msg.as_bytes());
                     }
                 }
                 return;
@@ -634,10 +643,10 @@ impl GpioSerialLabState {
             pin.history.push_back(if pin.level_high { 1 } else { 0 });
         }
 
-        if self.console_mode == ConsoleMode::GpioEdgeMonitor {
+        if self.log_edges {
             for (bcm, ev_desc) in sim_events {
                 let msg = format!("GPIO{bcm:02} | {ev_desc}");
-                self.push_log("EV", &msg, msg.as_bytes());
+                self.push_log(LogSource::Gpio, "EV", &msg, msg.as_bytes());
             }
         }
     }
@@ -653,7 +662,7 @@ impl GpioSerialLabState {
                 .map_err(|e| e.to_string())?;
             if out.status.success() {
                 Ok(format!(
-                    "GPIO{bcm} configurado como OUTPUT -> {}",
+                    "GPIO{bcm} set to OUTPUT {}",
                     if high { "HIGH (3.3V)" } else { "LOW (0V)" }
                 ))
             } else {
@@ -671,7 +680,7 @@ impl GpioSerialLabState {
             Ok(m) => m.clone(),
             Err(e) => format!("GPIO{bcm} updated locally ({e})"),
         };
-        self.push_log("TX", &msg, msg.as_bytes());
+        self.push_log(LogSource::Gpio, "TX", &msg, msg.as_bytes());
         res
     }
 
@@ -679,7 +688,7 @@ impl GpioSerialLabState {
         let p_arg = match pull {
             PinPull::Up => "pu",
             PinPull::Down => "pd",
-            PinPull::None => "np",
+            PinPull::None => "pn",
         };
         let cmd = format!("/usr/bin/pinctrl set {bcm} ip {p_arg}");
         let res = if self.hw_access_unlocked {
@@ -688,10 +697,7 @@ impl GpioSerialLabState {
                 .output()
                 .map_err(|e| e.to_string())?;
             if out.status.success() {
-                Ok(format!(
-                    "GPIO{bcm} configurado como INPUT ({})",
-                    pull.short_label()
-                ))
+                Ok(format!("GPIO{bcm} set to INPUT ({})", pull.short_label()))
             } else {
                 run_root_script(&cmd)
             }
@@ -707,7 +713,7 @@ impl GpioSerialLabState {
             Ok(m) => m.clone(),
             Err(e) => format!("GPIO{bcm} updated locally ({e})"),
         };
-        self.push_log("TX", &msg, msg.as_bytes());
+        self.push_log(LogSource::Gpio, "TX", &msg, msg.as_bytes());
         res
     }
 
@@ -718,8 +724,8 @@ impl GpioSerialLabState {
         if self.serial_connected {
             self.serial_file = None;
             self.serial_connected = false;
-            let msg = format!("Porta serial {} desconectada.", self.selected_port);
-            self.push_log("SYS", &msg, b"");
+            let msg = format!("{} closed.", self.selected_port);
+            self.push_log(LogSource::Serial, "SYS", &msg, b"");
             return;
         }
 
@@ -728,14 +734,14 @@ impl GpioSerialLabState {
                 self.serial_file = Some(file);
                 self.serial_connected = true;
                 let msg = format!(
-                    "Conectado a {} @ {} baud (8N1, Non-Blocking).",
+                    "Connected to {} at {} baud (8N1).",
                     self.selected_port, self.baud_rate
                 );
-                self.push_log("SYS", &msg, b"");
+                self.push_log(LogSource::Serial, "SYS", &msg, b"");
             }
             Err(err) => {
                 let msg = format!("Failed to open {}: {err}", self.selected_port);
-                self.push_log("ERR", &msg, b"");
+                self.push_log(LogSource::Serial, "ERR", &msg, b"");
             }
         }
     }
@@ -757,42 +763,91 @@ impl GpioSerialLabState {
             let text = String::from_utf8_lossy(slice)
                 .trim_end_matches(&['\r', '\n'][..])
                 .to_string();
-            self.push_log("RX", &text, slice);
+            self.push_log(LogSource::Serial, "RX", &text, slice);
         }
     }
 
-    pub fn send_console_command(&mut self) {
-        let raw_cmd = self.tx_input.trim().to_string();
+    /// Sends the serial input line (with the selected line ending) to the open port.
+    pub fn send_serial(&mut self) {
+        let raw_cmd = self.tx_input.trim_end_matches(['\r', '\n']).to_string();
         if raw_cmd.is_empty() {
             return;
         }
         self.tx_input.clear();
-
         let payload = format!("{}{}", raw_cmd, self.line_ending.suffix());
-        let bytes = payload.as_bytes();
-        self.tx_bytes_total += bytes.len();
-        self.push_log("TX", &raw_cmd, bytes);
+        let bytes = payload.into_bytes();
+        let result = match self.serial_file.as_mut() {
+            Some(file) => file.write_all(&bytes).and_then(|_| file.flush()),
+            None => {
+                self.push_log(
+                    LogSource::Serial,
+                    "ERR",
+                    "The serial port is closed. Connect first.",
+                    b"",
+                );
+                return;
+            }
+        };
+        match result {
+            Ok(()) => {
+                self.tx_bytes_total += bytes.len();
+                self.push_log(LogSource::Serial, "TX", &raw_cmd, &bytes);
+            }
+            Err(e) => self.push_log(
+                LogSource::Serial,
+                "ERR",
+                &format!("Serial TX error: {e}"),
+                b"",
+            ),
+        }
+    }
 
-        match self.console_mode {
-            ConsoleMode::SerialUart => {
-                if let Some(file) = &mut self.serial_file {
-                    if let Err(e) = file.write_all(bytes) {
-                        self.push_log("ERR", &format!("Serial TX error: {e}"), b"");
-                    } else {
-                        let _ = file.flush();
-                    }
-                } else {
-                    self.push_log(
-                        "SYS",
-                        "Note: serial port closed (local loopback shown). Click 'Connect' to transmit on the TXD pin.",
-                        b"",
-                    );
-                }
+    /// Runs the command line of the Log tab.
+    pub fn run_command(&mut self) {
+        let cmd = self.cmd_input.trim().to_string();
+        if cmd.is_empty() {
+            return;
+        }
+        self.cmd_input.clear();
+        self.push_log(LogSource::System, "TX", &format!("> {cmd}"), cmd.as_bytes());
+        self.execute_interactive_hw_cmd(&cmd);
+    }
+
+    /// Changes only the pull resistor, keeping the pin function.
+    pub fn set_gpio_pull(&mut self, bcm: u8, pull: PinPull) -> Result<String, String> {
+        let p_arg = match pull {
+            PinPull::Up => "pu",
+            PinPull::Down => "pd",
+            PinPull::None => "pn",
+        };
+        let cmd = format!("/usr/bin/pinctrl set {bcm} {p_arg}");
+        let direct = self.hw_access_unlocked
+            && Command::new("/usr/bin/pinctrl")
+                .args(["set", &bcm.to_string(), p_arg])
+                .output()
+                .is_ok_and(|o| o.status.success());
+        let res = if direct {
+            Ok(format!("GPIO{bcm} pull {}", pull.short_label()))
+        } else {
+            run_root_script(&cmd)
+        };
+        if res.is_ok() {
+            if let Some(pin) = self.pins.get_mut(bcm as usize) {
+                pin.pull = pull;
             }
-            ConsoleMode::I2cArgonInspector | ConsoleMode::GpioEdgeMonitor => {
-                // Built-in interactive hardware command interpreter!
-                self.execute_interactive_hw_cmd(&raw_cmd);
-            }
+        }
+        let (dir, msg) = match &res {
+            Ok(m) => ("TX", m.clone()),
+            Err(e) => ("ERR", format!("GPIO{bcm} pull not changed: {e}")),
+        };
+        self.push_log(LogSource::Gpio, dir, &msg, b"");
+        res
+    }
+
+    pub fn reset_edge_counters(&mut self, bcm: u8) {
+        if let Some(pin) = self.pins.get_mut(bcm as usize) {
+            pin.rising_edges = 0;
+            pin.falling_edges = 0;
         }
     }
 
@@ -804,7 +859,7 @@ impl GpioSerialLabState {
         match parts[0].to_lowercase().as_str() {
             "help" | "?" => {
                 let help = "Available commands: 'scan' (i2cdetect), 'mcu' (dump Argon 0x1a), 'gpio' (read GPIO 0-27), 'fan <0-100>', 'high <bcm>', 'low <bcm>'";
-                self.push_log("SYS", help, help.as_bytes());
+                self.push_log(LogSource::System, "SYS", help, help.as_bytes());
             }
             "scan" | "i2cdetect" => {
                 self.probe_i2c_bus();
@@ -828,15 +883,18 @@ impl GpioSerialLabState {
                     })
                     .collect();
                 let line = summary.join("  ");
-                self.push_log("RX", &line, line.as_bytes());
+                self.push_log(LogSource::Gpio, "RX", &line, line.as_bytes());
             }
             "fan" if parts.len() >= 2 => {
                 if let Ok(spd) = parts[1].parse::<u8>() {
                     match crate::argon::set_immediate_fan_speed(spd) {
-                        Ok(m) => {
-                            self.push_log("RX", &format!("I2C 0x1a [0x80] <= {spd}% ({m})"), b"")
-                        }
-                        Err(e) => self.push_log("ERR", &e, b""),
+                        Ok(m) => self.push_log(
+                            LogSource::I2c,
+                            "RX",
+                            &format!("I2C 0x1a [0x80] <= {spd}% ({m})"),
+                            b"",
+                        ),
+                        Err(e) => self.push_log(LogSource::I2c, "ERR", &e, b""),
                     }
                 }
             }
@@ -851,7 +909,7 @@ impl GpioSerialLabState {
                 }
             }
             _ => {
-                self.push_log(
+                self.push_log(LogSource::System,
                     "SYS",
                     "Type 'help' to list diagnostic commands (scan, mcu, gpio, fan <0-100>, high <bcm>, low <bcm>).",
                     b"",
@@ -868,18 +926,18 @@ impl GpioSerialLabState {
             Ok(o) if o.status.success() => {
                 let text = String::from_utf8_lossy(&o.stdout);
                 for line in text.lines() {
-                    self.push_log("RX", line, line.as_bytes());
+                    self.push_log(LogSource::I2c, "RX", line, line.as_bytes());
                 }
             }
             _ => {
                 if let Ok(res) = run_root_script("/usr/sbin/i2cdetect -y 1") {
                     for line in res.lines() {
-                        self.push_log("RX", line, line.as_bytes());
+                        self.push_log(LogSource::I2c, "RX", line, line.as_bytes());
                     }
                 } else {
-                    self.push_log(
+                    self.push_log(LogSource::I2c,
                         "ERR",
-                        "No permission on /dev/i2c-1. Click '🔓 Unlock Hardware Access' above.",
+                        "No access to /dev/i2c-1. Enable I2C in Hardware, or use Unlock hardware, then log in again.",
                         b"",
                     );
                 }
@@ -893,10 +951,10 @@ impl GpioSerialLabState {
         match run_root_script(py) {
             Ok(line) => {
                 self.rx_bytes_total += 4;
-                self.push_log("RX", &line, line.as_bytes());
+                self.push_log(LogSource::I2c, "RX", &line, line.as_bytes());
             }
             Err(err) => {
-                self.push_log("ERR", &err, err.as_bytes());
+                self.push_log(LogSource::I2c, "ERR", &err, err.as_bytes());
             }
         }
     }

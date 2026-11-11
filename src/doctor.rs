@@ -22,7 +22,7 @@ const I2C_OFF: &str = "enable I2C in Hardware (dtparam=i2c_arm=on in config.txt)
 const SETUP: &str = "sudo /usr/lib/argon-control-center/setup-permissions.sh $USER (or GPIO Lab > Unlock hardware), then log in again";
 
 /// Read + write access for the current user.
-fn rw(path: &str) -> bool {
+pub fn rw(path: &str) -> bool {
     let Ok(c) = CString::new(path) else {
         return false;
     };

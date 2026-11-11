@@ -5,10 +5,7 @@ use crate::argon::{
     serialize_fan_curve, set_immediate_fan_speed, FanCurvePoint, FanPreset, OledConfig, TempUnit,
     CPU_FAN_CONF, HDD_FAN_CONF,
 };
-use crate::gpio_lab::{
-    format_console_entry_payload, ConsoleMode, DataFormat, GpioSerialLabState, HeaderPinKind,
-    LineEnding, PinPull, RPI_40PIN_HEADER,
-};
+use crate::gpio_lab::GpioSerialLabState;
 use crate::i18n::{texts, Language};
 use crate::overclock::{
     apply_runtime_cpufreq, get_boot_config_path, load_boot_config, save_boot_config_scoped,
@@ -29,6 +26,8 @@ use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::fs;
 use std::time::{Duration, Instant};
+
+mod gpio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActiveTab {
@@ -110,7 +109,10 @@ pub struct ArgonControlCenterApp {
     pub config_preview_tab: ConfigPreviewTab,
     pub gpio_lab: GpioSerialLabState,
     gpio_view_diagram: bool,
+    gpio_panel: gpio::GpioPanel,
+    gpio_query: String,
     pinout: Option<PinoutTexture>,
+    app_icon: Option<egui::TextureHandle>,
     pinout_rx: Option<std::sync::mpsc::Receiver<Option<crate::pinout::Pinout>>>,
 
     // Status & Logs
@@ -208,7 +210,10 @@ impl ArgonControlCenterApp {
             config_preview_tab: ConfigPreviewTab::ArgonFanConf,
             gpio_lab: GpioSerialLabState::new(),
             gpio_view_diagram: true,
+            gpio_panel: gpio::GpioPanel::default(),
+            gpio_query: String::new(),
             pinout: None,
+            app_icon: None,
             pinout_rx: {
                 // Pre-render the GPIO pin-out diagram while the app starts.
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -242,6 +247,23 @@ impl ArgonControlCenterApp {
             ColorScheme::System => configure_kde_breeze_style(ctx, &self.kde_palette),
             ColorScheme::Aorus => configure_aorus_style(ctx),
         }
+    }
+
+    /// The application icon, rasterized once from the embedded SVG.
+    fn app_logo(&mut self, ui: &mut Ui, size: f32) {
+        let texture = self.app_icon.get_or_insert_with(|| {
+            const PX: usize = 128;
+            let rgba = crate::icon::rgba(PX as u32).unwrap_or_else(|| vec![0; PX * PX * 4]);
+            ui.ctx().load_texture(
+                "app-icon",
+                egui::ColorImage::from_rgba_unmultiplied([PX, PX], &rgba),
+                egui::TextureOptions {
+                    mipmap_mode: Some(egui::TextureFilter::Linear),
+                    ..egui::TextureOptions::LINEAR
+                },
+            )
+        });
+        ui.add(egui::Image::new((texture.id(), Vec2::splat(size))));
     }
 
     fn log_result(&mut self, action: &str, res: Result<String, String>) {
@@ -524,22 +546,10 @@ impl ArgonControlCenterApp {
         let collapsed = self.sidebar_collapsed;
 
         // Header: logo (+ name when expanded) and the collapse / expand toggle.
-        let logo = |ui: &mut Ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
-            ui.painter()
-                .rect_filled(logo_rect, CornerRadius::same(4), pal.selection_bg);
-            ui.painter().text(
-                logo_rect.center(),
-                Align2::CENTER_CENTER,
-                "⚙",
-                FontId::new(15.0, FontFamily::Proportional),
-                crate::system_colors::on_color(pal.selection_bg),
-            );
-        };
         let mut toggle = false;
         if collapsed {
             ui.vertical_centered(|ui| {
-                logo(ui);
+                self.app_logo(ui, 28.0);
                 ui.add_space(4.0);
                 toggle = ui
                     .add(egui::Button::new(RichText::new("»").size(14.0)).frame(false))
@@ -548,7 +558,7 @@ impl ArgonControlCenterApp {
             });
         } else {
             ui.horizontal(|ui| {
-                logo(ui);
+                self.app_logo(ui, 28.0);
                 ui.label(
                     RichText::new("Argon")
                         .size(14.5)
@@ -691,16 +701,7 @@ impl ArgonControlCenterApp {
         // Same branding as the sidebar: logo and accent come from the active palette.
         // Status (daemon, 5 V, board) lives in the footer.
         ui.horizontal(|ui| {
-            let (logo_rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), Sense::hover());
-            let painter = ui.painter();
-            painter.rect_filled(logo_rect, CornerRadius::same(5), pal.selection_bg);
-            painter.text(
-                logo_rect.center(),
-                Align2::CENTER_CENTER,
-                "⚙",
-                FontId::new(17.0, FontFamily::Proportional),
-                crate::system_colors::on_color(pal.selection_bg),
-            );
+            self.app_logo(ui, 32.0);
             ui.label(
                 RichText::new("Argon")
                     .size(18.0)
@@ -3978,851 +3979,6 @@ impl ArgonControlCenterApp {
     // =========================================================================
     // TAB 6: GPIO LOGIC ANALYZER & ARDUINO-STYLE SERIAL/I2C DEV CONSOLE
     // =========================================================================
-    fn draw_gpio_lab_tab(&mut self, ui: &mut Ui) {
-        responsive_two_columns(
-            ui,
-            self,
-            |app, left_ui| {
-                app.draw_gpio_header_card(left_ui);
-            },
-            |app, right_ui| {
-                app.draw_logic_analyzer_and_console(right_ui);
-            },
-        );
-    }
-
-    /// Draws the 40-pin diagram with live GPIO states on top. Returns false when the diagram
-    /// could not be rendered (the caller then shows the list view).
-    fn draw_pinout_diagram(&mut self, ui: &mut Ui) -> bool {
-        let t = texts(self.lang);
-        if self.pinout.is_none() {
-            if self.pinout_rx.is_some() {
-                // Still rendering on the start-up thread: show a short placeholder.
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(RichText::new(t.gpio_diagram_loading).color(uc().text_secondary));
-                });
-                ui.ctx().request_repaint_after(Duration::from_millis(100));
-                return true;
-            }
-            // Fallback (pre-render thread failed to start): render now.
-            self.pinout = Some(PinoutTexture::from_render(
-                ui.ctx(),
-                crate::pinout::render(900),
-            ));
-        }
-        let Some(diagram) = self.pinout.as_ref() else {
-            return false;
-        };
-        let Some(texture) = diagram.texture.as_ref() else {
-            return false;
-        };
-
-        let w = ui.available_width().min(620.0);
-        let size = Vec2::new(w, w * diagram.aspect);
-        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.image(
-            texture.id(),
-            rect,
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
-
-        let pins = diagram.pins;
-        let mut clicked: Option<u8> = None;
-        for (i, def) in RPI_40PIN_HEADER.iter().enumerate() {
-            let HeaderPinKind::Gpio(bcm) = def.kind else {
-                continue;
-            };
-            let b = pins[i];
-            let pin_rect = Rect::from_min_max(
-                Pos2::new(rect.left() + b[0] * size.x, rect.top() + b[1] * size.y),
-                Pos2::new(rect.left() + b[2] * size.x, rect.top() + b[3] * size.y),
-            );
-            let Some(state) = self.gpio_lab.pins.get(bcm as usize) else {
-                continue;
-            };
-            let fill = if state.level_high {
-                Color32::from_rgb(30, 170, 90)
-            } else {
-                Color32::from_rgb(52, 56, 64)
-            };
-            painter.rect_filled(pin_rect, CornerRadius::same(3), fill);
-            painter.text(
-                pin_rect.center(),
-                Align2::CENTER_CENTER,
-                def.phys_num.to_string(),
-                FontId::new(
-                    (pin_rect.height() * 0.55).clamp(8.0, 16.0),
-                    FontFamily::Proportional,
-                ),
-                Color32::WHITE,
-            );
-            if self.gpio_lab.selected_bcm == bcm {
-                painter.rect_stroke(
-                    pin_rect.expand(2.0),
-                    CornerRadius::same(4),
-                    Stroke::new(2.5_f32, uc().orange),
-                    StrokeKind::Outside,
-                );
-            }
-            let resp = ui.interact(pin_rect, ui.id().with(("pinout-pin", bcm)), Sense::click());
-            if resp.clicked() {
-                clicked = Some(bcm);
-            }
-            if resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-            let tip = format!(
-                "{}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ⬆ {} rising | ⬇ {} falling",
-                state.role_note,
-                state.direction.short_label(),
-                state.pull.short_label(),
-                if state.level_high { "HIGH (3.3V)" } else { "LOW (0.0V)" },
-                state.rising_edges,
-                state.falling_edges
-            );
-            aorus_tooltip(
-                resp,
-                &format!("Physical pin #{} — GPIO {}", def.phys_num, bcm),
-                &tip,
-                Some(&format!("pinctrl get {bcm}")),
-            );
-        }
-        if let Some(bcm) = clicked {
-            self.gpio_lab.selected_bcm = bcm;
-        }
-
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                RichText::new("■ HIGH")
-                    .color(Color32::from_rgb(30, 170, 90))
-                    .strong(),
-            );
-            ui.label(RichText::new("■ LOW").color(uc().text_secondary).strong());
-            ui.label(
-                RichText::new(t.gpio_diagram_hint)
-                    .size(11.5)
-                    .color(uc().text_secondary),
-            );
-        });
-        true
-    }
-
-    fn draw_gpio_header_card(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-        aorus_card_with_tip(
-            ui,
-            t.card_gpio_header,
-            t.card_gpio_header_tip,
-            uc().orange,
-            |ui| {
-                // Top Control Strip: Hardware Unlock Badge/Button + Pulse Generator Toggle
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(5))
-                    .inner_margin(egui::Margin::symmetric(8, 5))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal_wrapped(|ui| {
-                            if self.gpio_lab.hw_access_unlocked {
-                                ui.label(
-                                    RichText::new(t.gpio_unlocked_badge)
-                                        .size(11.5)
-                                        .strong()
-                                        .color(uc().green),
-                                );
-                            } else {
-                                let r_un = aorus_action_button(
-                                    ui,
-                                    t.btn_unlock_gpio,
-                                    uc().btn_orange,
-                                    uc().orange,
-                                );
-                                if r_un.clicked() {
-                                    let res = self.gpio_lab.unlock_hardware_access();
-                                    self.log_result("Unlock GPIO/I2C Hardware", res);
-                                }
-                                aorus_tooltip(
-                                    r_un,
-                                    t.btn_unlock_gpio,
-                                    t.btn_unlock_gpio_tip,
-                                    Some("/usr/bin/pinctrl & /dev/gpiochip0"),
-                                );
-                            }
-
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    let r_sim = ui.checkbox(
-                                        &mut self.gpio_lab.simulate_pulses,
-                                        t.chk_sim_pulses,
-                                    );
-                                    aorus_tooltip(
-                                        r_sim,
-                                        t.chk_sim_pulses,
-                                        t.chk_sim_pulses_tip,
-                                        None,
-                                    );
-                                },
-                            );
-                        });
-                    });
-
-                ui.add_space(6.0);
-
-                // View switch: annotated diagram (default) or the compact list.
-                ui.horizontal_wrapped(|ui| {
-                    for (diagram, label) in [(true, t.gpio_view_diagram), (false, t.gpio_view_list)]
-                    {
-                        if segmented_pill(
-                            ui,
-                            label,
-                            self.gpio_view_diagram == diagram,
-                            uc().btn_cyan,
-                            uc().cyan,
-                        )
-                        .clicked()
-                        {
-                            self.gpio_view_diagram = diagram;
-                        }
-                    }
-                });
-                ui.add_space(4.0);
-                let diagram_shown = self.gpio_view_diagram && self.draw_pinout_diagram(ui);
-
-                // Interactive 40-Pin Raspberry Pi Physical Header (20 rows x 2 columns)
-                if !diagram_shown {
-                    egui::Frame::new()
-                        .fill(uc().bg_subgroup)
-                        .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                        .corner_radius(CornerRadius::same(6))
-                        .inner_margin(egui::Margin::symmetric(8, 6))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            egui::ScrollArea::vertical()
-                                .id_salt("rpi_40pin_scroll")
-                                .max_height(315.0)
-                                .show(ui, |ui| {
-                                    // Two columns mirror the physical header; narrow windows
-                                    // list the pins 1..40 in a single column instead.
-                                    let two_cols = ui.available_width() >= 2.0 * 210.0 + 30.0;
-                                    egui::Grid::new("rpi_40pin_grid")
-                                        .num_columns(if two_cols { 2 } else { 1 })
-                                        .spacing([10.0, 4.0])
-                                        .striped(true)
-                                        .show(ui, |ui| {
-                                            if two_cols {
-                                                for row in 0..20 {
-                                                    let odd_pin = &RPI_40PIN_HEADER[row * 2];
-                                                    let even_pin = &RPI_40PIN_HEADER[row * 2 + 1];
-                                                    self.draw_single_header_pin(ui, odd_pin, false);
-                                                    self.draw_single_header_pin(ui, even_pin, true);
-                                                    ui.end_row();
-                                                }
-                                            } else {
-                                                for pin in RPI_40PIN_HEADER.iter() {
-                                                    self.draw_single_header_pin(ui, pin, false);
-                                                    ui.end_row();
-                                                }
-                                            }
-                                        });
-                                });
-                        });
-                }
-
-                ui.add_space(8.0);
-
-                // Selected GPIO Pin Inspector & Signal Generator Strip
-                let sel_bcm = self.gpio_lab.selected_bcm;
-                if let Some(pin) = self.gpio_lab.pins.get(sel_bcm as usize).cloned() {
-                    egui::Frame::new()
-                        .fill(uc().bg_subgroup)
-                        .stroke(Stroke::new(1.2_f32, uc().orange))
-                        .corner_radius(CornerRadius::same(5))
-                        .inner_margin(egui::Margin::symmetric(10, 8))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{} GPIO{} ({})",
-                                        t.pin_inspector_title, pin.bcm, pin.role_note
-                                    ))
-                                    .size(12.5)
-                                    .strong()
-                                    .color(uc().heading),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        let lvl_col = if pin.level_high {
-                                            uc().green
-                                        } else {
-                                            uc().cyan
-                                        };
-                                        let lvl_str = if pin.level_high {
-                                            "HIGH (1 / 3.3V)"
-                                        } else {
-                                            "LOW (0 / 0.0V)"
-                                        };
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "[{} | {}] {}  (⬆{} ⬇{})",
-                                                pin.direction.short_label(),
-                                                pin.pull.short_label(),
-                                                lvl_str,
-                                                pin.rising_edges,
-                                                pin.falling_edges
-                                            ))
-                                            .monospace()
-                                            .size(11.5)
-                                            .strong()
-                                            .color(lvl_col),
-                                        );
-                                    },
-                                );
-                            });
-
-                            ui.add_space(6.0);
-                            ui.horizontal_wrapped(|ui| {
-                                if aorus_action_button(
-                                    ui,
-                                    t.btn_set_high,
-                                    uc().btn_green,
-                                    uc().green,
-                                )
-                                .clicked()
-                                {
-                                    let res = self.gpio_lab.set_gpio_output(sel_bcm, true);
-                                    self.log_result(&format!("GPIO{sel_bcm} -> HIGH"), res);
-                                }
-                                if aorus_action_button(ui, t.btn_set_low, uc().btn_cyan, uc().cyan)
-                                    .clicked()
-                                {
-                                    let res = self.gpio_lab.set_gpio_output(sel_bcm, false);
-                                    self.log_result(&format!("GPIO{sel_bcm} -> LOW"), res);
-                                }
-                                if ui.button(t.btn_set_in_pu).clicked() {
-                                    let res = self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Up);
-                                    self.log_result(&format!("GPIO{sel_bcm} -> IN (PU)"), res);
-                                }
-                                if ui.button(t.btn_set_in_pd).clicked() {
-                                    let res = self.gpio_lab.set_gpio_input(sel_bcm, PinPull::Down);
-                                    self.log_result(&format!("GPIO{sel_bcm} -> IN (PD)"), res);
-                                }
-
-                                let mut is_watched = self.gpio_lab.watched_bcm.contains(&sel_bcm);
-                                if ui.checkbox(&mut is_watched, t.chk_watch_waveform).changed() {
-                                    if is_watched {
-                                        if self.gpio_lab.watched_bcm.len() >= 4 {
-                                            self.gpio_lab.watched_bcm.remove(0);
-                                        }
-                                        self.gpio_lab.watched_bcm.push(sel_bcm);
-                                    } else if self.gpio_lab.watched_bcm.len() > 1 {
-                                        self.gpio_lab.watched_bcm.retain(|&b| b != sel_bcm);
-                                    }
-                                }
-                            });
-                        });
-                }
-            },
-        );
-    }
-
-    fn draw_single_header_pin(
-        &mut self,
-        ui: &mut Ui,
-        def: &crate::gpio_lab::PhysicalPinDef,
-        right_side: bool,
-    ) {
-        match def.kind {
-            HeaderPinKind::Power3v3 => {
-                let txt = format!("#{:02}  ⚡ {}", def.phys_num, def.label);
-                ui.label(
-                    RichText::new(txt)
-                        .monospace()
-                        .size(11.5)
-                        .strong()
-                        .color(uc().amber),
-                );
-            }
-            HeaderPinKind::Power5v => {
-                let txt = format!("#{:02}  ⚡ {}", def.phys_num, def.label);
-                ui.label(
-                    RichText::new(txt)
-                        .monospace()
-                        .size(11.5)
-                        .strong()
-                        .color(uc().red),
-                );
-            }
-            HeaderPinKind::Ground => {
-                let txt = format!("#{:02}  {}", def.phys_num, def.label);
-                ui.label(
-                    RichText::new(txt)
-                        .monospace()
-                        .size(11.5)
-                        .color(uc().text_secondary),
-                );
-            }
-            HeaderPinKind::IdEeprom => {
-                let txt = format!("#{:02}  🏷 {}", def.phys_num, def.label);
-                ui.label(RichText::new(txt).monospace().size(11.5).color(uc().cyan));
-            }
-            HeaderPinKind::Gpio(bcm) => {
-                let is_sel = self.gpio_lab.selected_bcm == bcm;
-                let (dir_str, pull_str, high, role, rising, falling) = self
-                    .gpio_lab
-                    .pins
-                    .get(bcm as usize)
-                    .map(|p| {
-                        (
-                            p.direction.short_label(),
-                            p.pull.short_label(),
-                            p.level_high,
-                            p.role_note,
-                            p.rising_edges,
-                            p.falling_edges,
-                        )
-                    })
-                    .unwrap_or(("IN", "NP", false, "", 0, 0));
-
-                let led = if high { "⏺ 1" } else { "○ 0" };
-                let btn_txt = if right_side {
-                    // Mirrored so the physical pin number sits next to the header, like the board.
-                    format!(
-                        "({}) {} [{}] {} | # {:02}",
-                        pull_str, def.label, dir_str, led, def.phys_num
-                    )
-                } else {
-                    format!(
-                        "# {:02} | {} [{}] {} ({})",
-                        def.phys_num, led, dir_str, def.label, pull_str
-                    )
-                };
-
-                let fill = if is_sel {
-                    uc().btn_orange
-                } else if high {
-                    Color32::from_rgb(14, 52, 38)
-                } else {
-                    Color32::from_rgb(20, 28, 44)
-                };
-                let border = if is_sel {
-                    uc().orange
-                } else if high {
-                    uc().green
-                } else {
-                    uc().border_subtle
-                };
-
-                let btn = egui::Button::new(
-                    RichText::new(btn_txt)
-                        .monospace()
-                        .size(11.0)
-                        .strong()
-                        .color(Color32::WHITE),
-                )
-                .fill(fill)
-                .stroke(Stroke::new(1.0_f32, border))
-                .min_size(Vec2::new(210.0, 22.0));
-
-                let resp = ui.add(btn);
-                if resp.clicked() {
-                    self.gpio_lab.selected_bcm = bcm;
-                }
-                let tip_desc = format!(
-                    "Function: {}\nDirection: {} | Pull: {}\nLogic level: {}\nCaptured edges: ⬆ {} rising | ⬇ {} falling",
-                    role,
-                    dir_str,
-                    pull_str,
-                    if high { "HIGH (3.3V)" } else { "LOW (0.0V)" },
-                    rising,
-                    falling
-                );
-                aorus_tooltip(
-                    resp,
-                    &format!("Physical pin #{} — GPIO {}", def.phys_num, bcm),
-                    &tip_desc,
-                    Some(&format!("pinctrl get {bcm}")),
-                );
-            }
-        }
-    }
-
-    fn draw_logic_analyzer_and_console(&mut self, ui: &mut Ui) {
-        let t = texts(self.lang);
-
-        // Top Card: Multi-Channel Digital Logic Analyzer (Waveform Plotter)
-        aorus_card_with_tip(
-            ui,
-            t.card_logic_analyzer,
-            t.card_logic_analyzer_tip,
-            uc().green,
-            |ui| {
-                draw_logic_analyzer_waveforms(ui, &self.gpio_lab);
-            },
-        );
-
-        ui.add_space(10.0);
-
-        // Bottom Card: Professional Arduino-Style Serial / I2C / GPIO Developer Console
-        aorus_card_with_tip(
-            ui,
-            t.card_arduino_console,
-            t.card_arduino_console_tip,
-            uc().cyan,
-            |ui| {
-                // Toolbar Row 1: Mode Switch + Connection / Bus Controls
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(5))
-                    .inner_margin(egui::Margin::symmetric(8, 5))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal_wrapped(|ui| {
-                            let r_uart = segmented_pill(
-                                ui,
-                                t.mode_uart,
-                                self.gpio_lab.console_mode == ConsoleMode::SerialUart,
-                                uc().btn_orange,
-                                uc().orange,
-                            );
-                            if r_uart.clicked() {
-                                self.gpio_lab.console_mode = ConsoleMode::SerialUart;
-                            }
-                            aorus_tooltip(
-                                r_uart,
-                                t.mode_uart,
-                                t.mode_uart_tip,
-                                Some("/dev/ttyS0 (GPIO 14/15)"),
-                            );
-
-                            let r_gmon = segmented_pill(
-                                ui,
-                                t.mode_gpio_mon,
-                                self.gpio_lab.console_mode == ConsoleMode::GpioEdgeMonitor,
-                                uc().btn_green,
-                                uc().green,
-                            );
-                            if r_gmon.clicked() {
-                                self.gpio_lab.console_mode = ConsoleMode::GpioEdgeMonitor;
-                            }
-                            aorus_tooltip(
-                                r_gmon,
-                                t.mode_gpio_mon,
-                                t.mode_gpio_mon_tip,
-                                Some("/dev/gpiochip0"),
-                            );
-
-                            let r_i2c = segmented_pill(
-                                ui,
-                                t.mode_i2c_insp,
-                                self.gpio_lab.console_mode == ConsoleMode::I2cArgonInspector,
-                                uc().btn_cyan,
-                                uc().cyan,
-                            );
-                            if r_i2c.clicked() {
-                                self.gpio_lab.console_mode = ConsoleMode::I2cArgonInspector;
-                            }
-                            aorus_tooltip(
-                                r_i2c,
-                                t.mode_i2c_insp,
-                                t.mode_i2c_insp_tip,
-                                Some("/dev/i2c-1 @ 0x1a"),
-                            );
-                        });
-
-                        ui.add_space(5.0);
-                        ui.horizontal_wrapped(|ui| {
-                            match self.gpio_lab.console_mode {
-                                ConsoleMode::SerialUart => {
-                                    let ports = self.gpio_lab.available_ports.clone();
-                                    egui::ComboBox::from_id_salt("serial_port_combo")
-                                        .width(120.0)
-                                        .selected_text(
-                                            RichText::new(&self.gpio_lab.selected_port)
-                                                .monospace()
-                                                .color(uc().text_primary),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for p in ports {
-                                                ui.selectable_value(
-                                                    &mut self.gpio_lab.selected_port,
-                                                    p.clone(),
-                                                    p,
-                                                );
-                                            }
-                                        });
-
-                                    egui::ComboBox::from_id_salt("serial_baud_combo")
-                                        .width(105.0)
-                                        .selected_text(
-                                            RichText::new(format!(
-                                                "{} baud",
-                                                self.gpio_lab.baud_rate
-                                            ))
-                                            .monospace()
-                                            .color(uc().text_primary),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for b in [
-                                                9600, 19200, 38400, 57600, 115200, 230400, 460800,
-                                                921600,
-                                            ] {
-                                                ui.selectable_value(
-                                                    &mut self.gpio_lab.baud_rate,
-                                                    b,
-                                                    format!("{b} baud"),
-                                                );
-                                            }
-                                        });
-
-                                    let (conn_lbl, conn_fill, conn_brd) =
-                                        if self.gpio_lab.serial_connected {
-                                            (t.btn_disconnect_serial, uc().red, Color32::WHITE)
-                                        } else {
-                                            (t.btn_connect_serial, uc().btn_green, uc().green)
-                                        };
-                                    if aorus_action_button(ui, conn_lbl, conn_fill, conn_brd)
-                                        .clicked()
-                                    {
-                                        self.gpio_lab.toggle_serial_connection();
-                                    }
-                                }
-                                ConsoleMode::GpioEdgeMonitor | ConsoleMode::I2cArgonInspector => {
-                                    if aorus_action_button(
-                                        ui,
-                                        t.btn_i2c_scan,
-                                        uc().btn_cyan,
-                                        uc().cyan,
-                                    )
-                                    .clicked()
-                                    {
-                                        self.gpio_lab.probe_i2c_bus();
-                                    }
-                                    if aorus_action_button(
-                                        ui,
-                                        t.btn_mcu_dump,
-                                        uc().btn_orange,
-                                        uc().orange,
-                                    )
-                                    .on_hover_text("Argon MCU · I2C 0x1a")
-                                    .clicked()
-                                    {
-                                        self.gpio_lab.probe_argon_mcu_registers();
-                                    }
-                                }
-                            }
-
-                            ui.separator();
-
-                            // Format Switch: ASCII | HEX | BIN
-                            for (fmt, lbl) in [
-                                (DataFormat::Ascii, "ASCII"),
-                                (DataFormat::Hex, "HEX"),
-                                (DataFormat::Binary, "BIN"),
-                            ] {
-                                if segmented_pill(
-                                    ui,
-                                    lbl,
-                                    self.gpio_lab.data_format == fmt,
-                                    uc().btn_slate,
-                                    uc().cyan,
-                                )
-                                .clicked()
-                                {
-                                    self.gpio_lab.data_format = fmt;
-                                }
-                            }
-
-                            ui.checkbox(&mut self.gpio_lab.show_timestamps, "🕒 Time");
-                            ui.checkbox(&mut self.gpio_lab.auto_scroll, "⬇ Scroll");
-                            ui.checkbox(&mut self.gpio_lab.paused, "⏸ Pause");
-                            if ui
-                                .small_button("🗑")
-                                .on_hover_text(t.btn_clear_logs)
-                                .clicked()
-                            {
-                                self.gpio_lab.entries.clear();
-                            }
-                        });
-                    });
-
-                ui.add_space(6.0);
-
-                // Monospace Serial / Hardware Terminal Output Box
-                egui::Frame::new()
-                    .fill(uc().bg_subgroup)
-                    .stroke(Stroke::new(1.0_f32, uc().border_subtle))
-                    .corner_radius(CornerRadius::same(4))
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| {
-                        let fmt = self.gpio_lab.data_format;
-                        let show_ts = self.gpio_lab.show_timestamps;
-                        egui::ScrollArea::vertical()
-                            .id_salt("arduino_serial_monitor_scroll")
-                            .max_height(175.0)
-                            .stick_to_bottom(self.gpio_lab.auto_scroll)
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                for entry in &self.gpio_lab.entries {
-                                    let (prefix_col, dir_badge) = match entry.direction {
-                                        "TX" => (uc().amber, "TX >>"),
-                                        "RX" => (uc().green, "RX <<"),
-                                        "EV" => (uc().cyan, "EV ⚡"),
-                                        "ERR" => (uc().red, "ERR ✖"),
-                                        _ => (uc().text_secondary, "SYS ℹ"),
-                                    };
-                                    let payload = format_console_entry_payload(entry, fmt);
-                                    let line = if show_ts {
-                                        format!("[{}] {} {}", entry.timestamp, dir_badge, payload)
-                                    } else {
-                                        format!("{} {}", dir_badge, payload)
-                                    };
-                                    ui.label(
-                                        RichText::new(line)
-                                            .monospace()
-                                            .size(12.0)
-                                            .color(prefix_col),
-                                    );
-                                }
-                            });
-                    });
-
-                ui.add_space(6.0);
-
-                // Bottom TX Command Input Bar (Arduino Serial Monitor Style)
-                ui.horizontal_wrapped(|ui| {
-                    let text_edit = egui::TextEdit::singleline(&mut self.gpio_lab.tx_input)
-                        .hint_text(t.tx_placeholder)
-                        .font(TextStyle::Monospace)
-                        .desired_width((ui.available_width() - 235.0).max(140.0));
-
-                    let edit_resp = ui.add(text_edit);
-                    let enter_pressed =
-                        edit_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-
-                    egui::ComboBox::from_id_salt("line_ending_combo")
-                        .width(115.0)
-                        .selected_text(
-                            RichText::new(match self.gpio_lab.line_ending {
-                                LineEnding::None => "No EOL",
-                                LineEnding::Newline => "LF (\\n)",
-                                LineEnding::CarriageReturn => "CR (\\r)",
-                                LineEnding::BothNlCr => "CRLF (\\r\\n)",
-                            })
-                            .size(11.5)
-                            .color(uc().text_primary),
-                        )
-                        .show_ui(ui, |ui| {
-                            for le in [
-                                LineEnding::Newline,
-                                LineEnding::BothNlCr,
-                                LineEnding::CarriageReturn,
-                                LineEnding::None,
-                            ] {
-                                ui.selectable_value(&mut self.gpio_lab.line_ending, le, le.label());
-                            }
-                        });
-
-                    if aorus_action_button(ui, t.btn_send_tx, uc().btn_orange, uc().orange)
-                        .clicked()
-                        || enter_pressed
-                    {
-                        self.gpio_lab.send_console_command();
-                    }
-                });
-            },
-        );
-    }
-}
-
-/// Renders a 4-Channel Digital Logic Analyzer / Waveform Plotter for the watched GPIO pins.
-fn draw_logic_analyzer_waveforms(ui: &mut Ui, lab: &GpioSerialLabState) {
-    let channels = &lab.watched_bcm;
-    let row_h = 38.0;
-    let total_h = (channels.len().max(1) as f32 * row_h) + 12.0;
-    let desired = Vec2::new(ui.available_width(), total_h);
-    let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    painter.rect_filled(rect, CornerRadius::same(5), uc().bg_subgroup);
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(5),
-        Stroke::new(1.0_f32, uc().border_subtle),
-        StrokeKind::Inside,
-    );
-
-    let label_col_w = 135.0;
-    let colors = [uc().green, uc().cyan, uc().orange, uc().amber];
-
-    for (idx, &bcm) in channels.iter().enumerate() {
-        let Some(pin) = lab.pins.get(bcm as usize) else {
-            continue;
-        };
-        let y_top = rect.top() + 6.0 + (idx as f32) * row_h;
-        let y_high = y_top + 7.0;
-        let y_low = y_top + row_h - 9.0;
-        let trace_color = colors[idx % colors.len()];
-
-        // Channel separator line
-        if idx > 0 {
-            painter.line_segment(
-                [
-                    Pos2::new(rect.left() + 4.0, y_top - 2.0),
-                    Pos2::new(rect.right() - 4.0, y_top - 2.0),
-                ],
-                Stroke::new(1.0_f32, chart_grid()),
-            );
-        }
-
-        // Left channel badge: GPIO name + Direction + HIGH/LOW + Edge count
-        let state_txt = if pin.level_high { "HIGH 1" } else { "LOW  0" };
-        painter.text(
-            Pos2::new(rect.left() + 8.0, y_top + 10.0),
-            Align2::LEFT_CENTER,
-            format!("GPIO{:02} [{}]", pin.bcm, pin.direction.short_label()),
-            FontId::new(11.5, FontFamily::Monospace),
-            uc().text_primary,
-        );
-        painter.text(
-            Pos2::new(rect.left() + 8.0, y_top + 24.0),
-            Align2::LEFT_CENTER,
-            format!("{} ⬆{} ⬇{}", state_txt, pin.rising_edges, pin.falling_edges),
-            FontId::new(10.5, FontFamily::Monospace),
-            trace_color,
-        );
-
-        // Digital Square-Wave Trace
-        let plot_left = rect.left() + label_col_w;
-        let plot_right = rect.right() - 10.0;
-        let plot_w = (plot_right - plot_left).max(20.0);
-
-        let n = pin.history.len();
-        if n >= 2 {
-            let mut pts = Vec::with_capacity(n * 2);
-            for (i, &val) in pin.history.iter().enumerate() {
-                let x = plot_left + (i as f32 / (n - 1) as f32) * plot_w;
-                let y = if val > 0 { y_high } else { y_low };
-                if i > 0 {
-                    let prev_val = pin.history[i - 1];
-                    if prev_val != val {
-                        // Vertical edge step for crisp digital logic analyzer look
-                        let prev_y = if prev_val > 0 { y_high } else { y_low };
-                        pts.push(Pos2::new(x, prev_y));
-                    }
-                }
-                pts.push(Pos2::new(x, y));
-            }
-            painter.add(Shape::line(pts, Stroke::new(2.0_f32, trace_color)));
-        }
-    }
 }
 
 // =============================================================================
