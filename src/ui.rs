@@ -830,7 +830,7 @@ impl ArgonControlCenterApp {
         let pal = self.active_palette();
         // Column 1: Smart Fan Direct Controls
         ui.label(
-            RichText::new("🌀 Smart Fan & I2C PWM")
+            RichText::new(t.tab_smart_fan)
                 .size(12.5)
                 .strong()
                 .color(pal.focus_blue),
@@ -900,10 +900,11 @@ impl ArgonControlCenterApp {
         });
     }
     fn compact_oc_controls(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
         let pal = self.active_palette();
         // Column 2: Overclocking & Live CPUFreq Controls
         ui.label(
-            RichText::new("🔥 Overclock & CPUFreq")
+            RichText::new(t.tab_overclock)
                 .size(12.5)
                 .strong()
                 .color(pal.neutral_orange),
@@ -979,7 +980,7 @@ impl ArgonControlCenterApp {
         let pal = self.active_palette();
         // Column 3: Argononed Guardian & Quick Lab Access
         ui.label(
-            RichText::new("🛡 argononed Guardian & Lab")
+            RichText::new("🛡 argononed")
                 .size(12.5)
                 .strong()
                 .color(pal.positive_green),
@@ -1024,7 +1025,7 @@ impl ArgonControlCenterApp {
         });
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            if ui.small_button("🔬 GPIO & Serial Lab").clicked() {
+            if ui.small_button(t.tab_gpio_lab).clicked() {
                 self.active_tab = ActiveTab::GpioLab;
             }
             if ui.small_button("🛠 I2C/OLED/IR").clicked() {
@@ -1929,7 +1930,8 @@ impl ArgonControlCenterApp {
 
             if !self.telemetry.raid_arrays.is_empty() {
                 ui.separator();
-                ui.label(RichText::new(t.raid_arrays_title).strong());
+                ui.label(RichText::new(t.raid_arrays_title).strong())
+                    .on_hover_text("/proc/mdstat");
                 for r in &self.telemetry.raid_arrays {
                     ui.label(format!(
                         "• {} [{}] — {} ({})",
@@ -2837,7 +2839,8 @@ impl ArgonControlCenterApp {
 
     fn draw_firmware_oc_card(&mut self, ui: &mut Ui) {
         let t = texts(self.lang);
-        aorus_card(ui, t.card_firmware_oc, uc().orange, |ui| {
+        let fw_tip = format!("{} ({})", t.card_firmware_oc_tip, get_boot_config_path());
+        aorus_card_with_tip(ui, t.card_firmware_oc, &fw_tip, uc().orange, |ui| {
             adapt_slider_width(ui);
             ui.label(
                 RichText::new(t.firmware_oc_desc)
@@ -3133,7 +3136,8 @@ impl ArgonControlCenterApp {
 
             // Group 1: OLED Configuration
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(t.oled_section).strong().color(uc().amber));
+                ui.label(RichText::new(t.oled_section).strong().color(uc().amber))
+                    .on_hover_text("/etc/argoneonoled.conf");
                 let badge = if self.oled_hw_present {
                     (t.oled_installed_badge, uc().green)
                 } else {
@@ -4037,6 +4041,7 @@ impl ArgonControlCenterApp {
                                         uc().btn_orange,
                                         uc().orange,
                                     )
+                                    .on_hover_text("Argon MCU · I2C 0x1a")
                                     .clicked()
                                     {
                                         self.gpio_lab.probe_argon_mcu_registers();
@@ -4354,15 +4359,13 @@ fn utility_action_row(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(title)
-                            .size(13.0)
-                            .strong()
-                            .color(Color32::WHITE),
-                    );
-                    ui.label(RichText::new(desc).size(11.5).color(uc().text_secondary));
-                });
+                ui.label(
+                    RichText::new(title)
+                        .size(13.0)
+                        .strong()
+                        .color(uc().text_primary),
+                )
+                .on_hover_text(desc);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let resp = aorus_action_button(ui, btn_label, uc().btn_slate, uc().orange);
                     if resp.clicked() {
@@ -4915,19 +4918,12 @@ fn feature_toggle_row(
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.checkbox(state, "");
-                ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(format!("{title} ⓘ"))
-                            .size(12.5)
-                            .strong()
-                            .color(uc().text_primary),
-                    );
-                    ui.label(
-                        RichText::new(description)
-                            .size(11.5)
-                            .color(uc().text_secondary),
-                    );
-                });
+                ui.label(
+                    RichText::new(title)
+                        .size(12.5)
+                        .strong()
+                        .color(uc().text_primary),
+                );
             });
         })
         .response;
@@ -4987,7 +4983,7 @@ fn settings_label(ui: &mut Ui, text: &str) {
     ui.add_space(2.0);
 }
 
-/// Selectable option cards (title + one-line description) that wrap on narrow windows.
+/// Selectable option cards that wrap on narrow windows; the description is shown on hover.
 /// Returns true when the selection changed.
 fn choice_row<T: Copy + PartialEq>(
     ui: &mut Ui,
@@ -4996,8 +4992,8 @@ fn choice_row<T: Copy + PartialEq>(
 ) -> bool {
     let mut changed = false;
     let avail = ui.available_width();
-    // Up to three cards per row, never narrower than 200 px (one per row on small windows).
-    let per_row = ((avail / 220.0).floor() as usize).clamp(1, options.len().max(1));
+    // As many cards per row as fit at ~150 px each (one per row on very small windows).
+    let per_row = ((avail / 158.0).floor() as usize).clamp(1, options.len().max(1));
     let gap = 8.0;
     let card_w = ((avail - gap * (per_row as f32 - 1.0)) / per_row as f32).max(120.0);
     for chunk in options.chunks(per_row) {
@@ -5039,15 +5035,10 @@ fn choice_row<T: Copy + PartialEq>(
                                     .color(uc().text_primary),
                             );
                         });
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(*desc).size(11.5).color(uc().text_secondary),
-                            )
-                            .wrap(),
-                        );
                     })
                     .response
-                    .interact(Sense::click());
+                    .interact(Sense::click())
+                    .on_hover_text(*desc);
                 if resp.clicked() && !selected {
                     *value = *opt;
                     changed = true;

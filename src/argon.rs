@@ -28,16 +28,16 @@ pub enum FanPreset {
 impl FanPreset {
     pub fn label(&self, lang: Language) -> &'static str {
         match (self, lang) {
-            (FanPreset::Silent, Language::PtBr) => "SILENT (Silencioso)",
-            (FanPreset::Silent, Language::EnUs) => "SILENT (Quiet)",
-            (FanPreset::BalancedDefault, Language::PtBr) => "STANDARD (Padrão Argon)",
-            (FanPreset::BalancedDefault, Language::EnUs) => "STANDARD (Argon Default)",
-            (FanPreset::Performance, Language::PtBr) => "PERFORMANCE (Agressivo)",
-            (FanPreset::Performance, Language::EnUs) => "PERFORMANCE (Aggressive)",
-            (FanPreset::AlwaysOnTurbo, Language::PtBr) => "FULL SPEED (100% Contínuo)",
-            (FanPreset::AlwaysOnTurbo, Language::EnUs) => "FULL SPEED (100% Always On)",
-            (FanPreset::Custom, Language::PtBr) => "CUSTOM (Curva Manual)",
-            (FanPreset::Custom, Language::EnUs) => "CUSTOM (Manual Curve)",
+            (FanPreset::Silent, Language::PtBr) => "Silencioso",
+            (FanPreset::Silent, Language::EnUs) => "Silent",
+            (FanPreset::BalancedDefault, Language::PtBr) => "Padrão",
+            (FanPreset::BalancedDefault, Language::EnUs) => "Standard",
+            (FanPreset::Performance, Language::PtBr) => "Desempenho",
+            (FanPreset::Performance, Language::EnUs) => "Performance",
+            (FanPreset::AlwaysOnTurbo, Language::PtBr) => "Máxima (100%)",
+            (FanPreset::AlwaysOnTurbo, Language::EnUs) => "Full speed (100%)",
+            (FanPreset::Custom, Language::PtBr) => "Personalizada",
+            (FanPreset::Custom, Language::EnUs) => "Custom",
         }
     }
 

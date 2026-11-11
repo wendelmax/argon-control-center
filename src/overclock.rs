@@ -31,34 +31,19 @@ impl OcPreset {
     pub fn label_for(&self, lang: Language, p: &OcProfile) -> String {
         let pt = lang == Language::PtBr;
         match self {
-            OcPreset::EcoPowerSave => format!(
-                "ECO MODE ({} MHz / {})",
-                p.eco_mhz,
-                if pt { "Baixo Consumo" } else { "Power Save" }
-            ),
+            OcPreset::EcoPowerSave => format!("Eco · {} MHz", p.eco_mhz),
             OcPreset::StockBoost => format!(
-                "STOCK ({} MHz {})",
-                p.stock_mhz,
-                if pt {
-                    "Padrão de Fábrica"
-                } else {
-                    "Factory Default"
-                }
+                "{} · {} MHz",
+                if pt { "Padrão" } else { "Stock" },
+                p.stock_mhz
             ),
-            OcPreset::OcGaming => {
-                format!("AORUS OC GAMING ({} MHz / {} GPU)", p.oc_mhz, p.gpu_oc_mhz)
-            }
+            OcPreset::OcGaming => format!("OC · {} MHz", p.oc_mhz),
             OcPreset::OcExtreme => format!(
-                "AORUS EXTREME ({} MHz / {} GPU)",
-                p.extreme_mhz, p.gpu_extreme_mhz
+                "{} · {} MHz",
+                if pt { "Extremo" } else { "Extreme" },
+                p.extreme_mhz
             ),
-            OcPreset::Custom => {
-                if pt {
-                    "CUSTOM TUNING (Ajuste Manual)".to_string()
-                } else {
-                    "CUSTOM TUNING (Manual Setup)".to_string()
-                }
-            }
+            OcPreset::Custom => (if pt { "Manual" } else { "Custom" }).to_string(),
         }
     }
 
