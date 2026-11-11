@@ -5,6 +5,7 @@ pub mod gpio_lab;
 pub mod gpu;
 pub mod help;
 pub mod i18n;
+pub mod icon;
 pub mod overclock;
 pub mod pinout;
 pub mod power;
@@ -118,7 +119,9 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title("Argon Control Center")
             .with_inner_size([1160.0, 750.0])
-            .with_min_inner_size([480.0, 400.0]),
+            .with_min_inner_size([480.0, 400.0])
+            .with_app_id("argon-control-center")
+            .with_icon(crate::icon::window_icon().unwrap_or_default()),
         ..Default::default()
     };
 

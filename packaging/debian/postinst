@@ -9,5 +9,6 @@ if [ "$1" = "configure" ]; then
     fi
     /usr/lib/argon-control-center/setup-permissions.sh "$TARGET_USER" || true
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q || true
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
 fi
 exit 0

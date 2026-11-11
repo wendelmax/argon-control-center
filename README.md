@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/argon-control-center.svg" width="112" alt="">
+
 # Argon Control Center
 
 **A native Linux control center for Raspberry Pi computers in Argon40 cases.**
