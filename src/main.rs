@@ -16,6 +16,7 @@ pub mod system_colors;
 pub mod telemetry;
 pub mod theme;
 pub mod tryboot;
+pub mod tui;
 pub mod ui;
 
 use crate::argon::{load_fan_curve, FanPreset, CPU_FAN_CONF};
@@ -95,6 +96,21 @@ fn main() -> eframe::Result<()> {
             oc.over_voltage_delta_uv,
             oc.arm_boost
         );
+        return Ok(());
+    }
+
+    // Terminal UI when forced, or when there is no graphical session and we run in a terminal.
+    let force_tui = args.iter().any(|a| a == "--tui");
+    let force_gui = args.iter().any(|a| a == "--gui");
+    let no_display =
+        std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_none();
+    // SAFETY: isatty only inspects the file descriptor.
+    let in_terminal = unsafe { libc::isatty(1) == 1 };
+    if force_tui || (!force_gui && no_display && in_terminal) {
+        if let Err(e) = crate::tui::run() {
+            eprintln!("argon-control-center: terminal interface failed: {e}");
+            std::process::exit(1);
+        }
         return Ok(());
     }
 

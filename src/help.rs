@@ -86,7 +86,9 @@ static EN: [Section; 11] = [
          argon-control-center --json      one-line JSON snapshot for scripts and widgets\n\
          argon-control-center --doctor    check which hardware interfaces your user can use\n\
          argon-control-center --stress 180    stability test without the interface\n\
-         argon-control-center --pt | --en    start in Portuguese or English",
+         argon-control-center --pt | --en    start in Portuguese or English\n\
+         argon-control-center --tui | --gui    force the terminal or the graphical interface\n\n\
+         Without a graphical session (for example over SSH) the terminal interface opens automatically. Full reference: man argon-control-center",
         None,
     ),
     s(
@@ -162,7 +164,9 @@ static PT: [Section; 11] = [
          argon-control-center --json      leitura em JSON de uma linha para scripts e widgets\n\
          argon-control-center --doctor    o que o seu usuário consegue acessar no hardware\n\
          argon-control-center --stress 180    teste de estabilidade sem interface\n\
-         argon-control-center --pt | --en    abre em português ou inglês",
+         argon-control-center --pt | --en    abre em português ou inglês\n\
+         argon-control-center --tui | --gui    força a interface de terminal ou a gráfica\n\n\
+         Sem sessão gráfica (por exemplo via SSH) a interface de terminal abre automaticamente. Referência completa: man argon-control-center",
         None,
     ),
     s(
