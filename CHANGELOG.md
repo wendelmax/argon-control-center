@@ -32,6 +32,14 @@ First public release.
 - `--status` command-line report with the detected hardware and the current overclock.
 - `scripts/bump-version.sh` for MAJOR.MINOR.PATCH version bumps and release tags; version tags publish a GitHub Release automatically.
 
+- Safe overclocking: settings above factory clocks are tested with a one-shot trial boot (`tryboot.txt`, Raspberry Pi 4 and 5) and kept only after a stable test; a power cycle always returns to the previous settings.
+- Stability test (1, 3 or 10 minutes, or `--stress <seconds>`) recording temperature, clock and the 5 V rail, with results preserved if the system freezes.
+- Power-supply guard: overclocking above factory clocks is blocked while under-voltage has been detected since boot; `--status` reports under-voltage events.
+
+### Fixed
+- Saving the hardware interfaces page no longer writes overclock values selected elsewhere (for example from the dashboard) to `config.txt`, and saving an overclock no longer changes interfaces.
+- The under-voltage sensor is located by name (`rpi_volt`) instead of a fixed hwmon index.
+
 ### Security
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.
 - Hardware access is granted through group membership and udev rules; no setuid binaries or world-writable device nodes are used.

@@ -26,6 +26,7 @@ Monitor the system, tune the fan curve, overclock safely and manage hardware fea
 - [Compatibility](#compatibility)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Safe overclocking](#safe-overclocking)
 - [Configuration](#configuration)
 - [Permissions](#permissions)
 - [Building from source](#building-from-source)
@@ -66,6 +67,7 @@ The board and the Argon case are detected automatically at startup, so presets a
 - Live changes without rebooting: governor, minimum and maximum frequency, and boost.
 - Firmware presets written to a managed block in `config.txt`. The rest of the file is preserved.
 - `over_voltage` on Raspberry Pi 3 and 4; `over_voltage_delta` on Raspberry Pi 5.
+- Safe overclocking: trial boot, stability test and a power-supply guard (see [Safe overclocking](#safe-overclocking)).
 
 **Hardware features**
 - I2C, SPI, I2S, onboard audio, UART, VC4 KMS, camera and display auto-detection.
@@ -149,7 +151,8 @@ argon-control-center
 
 | Option | Description |
 |---|---|
-| `--status`, `-s` | Print telemetry, detected hardware and the current overclock, then exit |
+| `--status`, `-s` | Print telemetry, detected hardware, power events and the current overclock, then exit |
+| `--stress <seconds>` | Run the stability test without the interface; exits with status 1 if the result is not stable |
 | `--pt`, `--lang=pt` | Start in Brazilian Portuguese |
 | `--en`, `--lang=en` | Start in English |
 
@@ -162,6 +165,29 @@ Board         : Raspberry Pi 4 Model B Rev 1.4
 Detected      : Pi 4 · BCM2711 · 8 GB · Argon ONE (Pi 4)
 CPU Temp      : 47.7 °C | Target Fan: 0% | Argononed: active
 ```
+
+## Safe overclocking
+
+A firmware overclock that the board or power supply cannot sustain usually shows up as a system that no longer boots. The application guards against this in three ways.
+
+**Power-supply guard.** The 5 V rail is monitored through the `rpi_volt` sensor and the kernel log. If under-voltage has occurred since boot, settings above factory clocks are blocked, because a supply that already dips at stock clocks cannot sustain an overclock. Use the official 5.1 V / 3 A supply (or the one recommended for your Argon case) and reboot.
+
+**Trial boot.** On boards with the tryboot bootloader feature (Raspberry Pi 4 with a recent EEPROM, Raspberry Pi 5), settings above factory clocks are not written to `config.txt`. They go to `tryboot.txt`, and the board boots once with them:
+
+1. **Test boot** writes `tryboot.txt`; nothing changes yet.
+2. **Reboot into trial** starts the board once with the new settings.
+3. If the board hangs, switch it off and on: it boots the unchanged `config.txt`, and the application reports that the trial failed.
+4. If it boots, run the stability test. **Keep** copies the settings to `config.txt` once the test is stable; **Discard** removes them.
+
+On boards without tryboot, saving above factory clocks requires explicitly accepting the risk.
+
+**Stability test.** Loads every core for 1, 3 or 10 minutes while recording temperature, clock and the 5 V rail, then reports one of: stable, throttled, too hot (80 °C) or under-voltage. Progress is saved every second, so if the system freezes during the test the result is reported after the next start. The same test is available from the command line:
+
+```sh
+argon-control-center --stress 180
+```
+
+Each page saves only its own settings: saving hardware interfaces never writes overclock values, and saving an overclock never changes interfaces.
 
 ## Configuration
 
@@ -181,6 +207,7 @@ System files written by the application:
 | File | Purpose |
 |---|---|
 | `/boot/firmware/config.txt` (or `/boot/config.txt`) | Overclocking and hardware overlays |
+| `/boot/firmware/tryboot.txt` | Overclock under trial (used for a single boot) |
 | `/etc/argononed.conf`, `/etc/argononed-hdd.conf` | Fan curves |
 | `/etc/argonunits.conf` | Temperature unit used by `argononed` and the OLED |
 | `/etc/argoneonoled.conf` | OLED display settings |
@@ -315,7 +342,7 @@ Contributions are welcome. Please open an issue to discuss larger changes first.
 
 ## Security
 
-Overclocking and over-voltage settings can make a system unstable. Keep active cooling in place. If the board no longer boots after a change, edit `config.txt` on the SD card from another computer: restore `config.txt.argoncc.bak` or remove the `ARGON AORUS CONTROL CENTER` block.
+Overclocking and over-voltage settings can make a system unstable. Use the trial boot, keep active cooling in place and fix any under-voltage first. If a board no longer boots after a permanent change, edit `config.txt` on the boot media from another computer: restore `config.txt.argoncc.bak` or remove the `ARGON AORUS CONTROL CENTER` block.
 
 Stopping `argononed` disables the automatic fan curve and the case power button.
 

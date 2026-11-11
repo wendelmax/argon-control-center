@@ -11,8 +11,8 @@ use crate::gpio_lab::{
 };
 use crate::i18n::{texts, Language};
 use crate::overclock::{
-    apply_runtime_cpufreq, get_boot_config_path, load_boot_config, save_boot_config,
-    update_boot_config_str, BootOcConfig, OcPreset,
+    apply_runtime_cpufreq, get_boot_config_path, load_boot_config, save_boot_config_scoped,
+    update_boot_config_str, BootOcConfig, ConfigScope, OcPreset,
 };
 use crate::privileged::is_root;
 use crate::settings::{ColorScheme, DashboardStyle, Layout};
@@ -85,6 +85,12 @@ pub struct ArgonControlCenterApp {
     // Overclocking & Runtime CPU state
     pub boot_oc: BootOcConfig,
     pub selected_oc_preset: OcPreset,
+    trial_status: crate::tryboot::Status,
+    power_override: bool,
+    accept_oc_risk: bool,
+    stability: Option<crate::stability::StabilityTest>,
+    stability_minutes: u32,
+    last_stability: Option<crate::stability::Report>,
     pub runtime_governor: String,
     pub runtime_min_mhz: u32,
     pub runtime_max_mhz: u32,
@@ -179,6 +185,12 @@ impl ArgonControlCenterApp {
             manual_fan_slider: 55,
             boot_oc,
             selected_oc_preset: OcPreset::StockBoost,
+            trial_status: crate::tryboot::status(),
+            power_override: false,
+            accept_oc_risk: false,
+            stability: None,
+            stability_minutes: 3,
+            last_stability: crate::stability::last_report(),
             runtime_governor,
             runtime_min_mhz,
             runtime_max_mhz,
@@ -2641,6 +2653,9 @@ impl ArgonControlCenterApp {
         let t = texts(self.lang);
         let lang = self.lang;
 
+        self.draw_power_guard_card(ui);
+        self.draw_trial_card(ui);
+
         // Grouped 1-Click Performance Profile Bar
         aorus_card(ui, t.card_oc_presets, uc().orange, |ui| {
             egui::Frame::new()
@@ -2712,6 +2727,308 @@ impl ArgonControlCenterApp {
                 app.draw_firmware_oc_card(right_ui);
             },
         );
+
+        ui.add_space(12.0);
+        self.draw_stability_card(ui);
+    }
+
+    /// Save / trial-boot controls for the firmware overclock card.
+    ///
+    /// - At or below factory clocks: plain save to config.txt.
+    /// - Above factory clocks: blocked while the supply shows under-voltage; otherwise a trial
+    ///   boot (tryboot.txt) on boards that support it, or a save that requires accepting the risk.
+    fn draw_firmware_save_controls(&mut self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let profile = crate::board::current().oc;
+        let risky = self.boot_oc.exceeds_stock(&profile);
+
+        if !risky {
+            let resp =
+                aorus_full_cta_button(ui, t.btn_save_firmware_oc, uc().btn_orange, uc().orange);
+            if resp.clicked() {
+                let res = save_boot_config_scoped(&self.boot_oc, ConfigScope::Overclock);
+                self.log_result("Firmware OC (config.txt)", res);
+            }
+            aorus_tooltip(
+                resp,
+                t.btn_save_firmware_oc,
+                t.btn_save_firmware_oc_tip,
+                Some(get_boot_config_path()),
+            );
+            return;
+        }
+
+        if self.power_blocks_overclock() {
+            ui.add_enabled(
+                false,
+                egui::Button::new(RichText::new(t.btn_save_firmware_oc).strong()),
+            );
+            ui.add(
+                egui::Label::new(
+                    RichText::new(t.oc_power_blocked.replace(
+                        "{n}",
+                        &self.telemetry.undervoltage_events.max(1).to_string(),
+                    ))
+                    .color(uc().red),
+                )
+                .wrap(),
+            );
+            return;
+        }
+
+        if crate::tryboot::supported() {
+            ui.label(RichText::new(t.oc_needs_trial).color(uc().amber));
+            let resp = aorus_full_cta_button(ui, t.btn_trial_prepare, uc().btn_orange, uc().orange);
+            if resp.clicked() {
+                let res = crate::tryboot::prepare(&self.boot_oc);
+                self.log_result("Trial boot (tryboot.txt)", res);
+                self.trial_status = crate::tryboot::status();
+            }
+            let path = crate::tryboot::tryboot_path().display().to_string();
+            aorus_tooltip(
+                resp,
+                t.btn_trial_prepare,
+                t.btn_trial_prepare_tip,
+                Some(&path),
+            );
+        } else {
+            ui.add(egui::Label::new(RichText::new(t.oc_no_tryboot).color(uc().amber)).wrap());
+            ui.checkbox(&mut self.accept_oc_risk, t.oc_accept_risk);
+            let resp = ui.add_enabled(
+                self.accept_oc_risk,
+                egui::Button::new(RichText::new(t.btn_save_firmware_oc).strong()),
+            );
+            if resp.clicked() {
+                let res = save_boot_config_scoped(&self.boot_oc, ConfigScope::Overclock);
+                self.log_result("Firmware OC (config.txt)", res);
+                self.accept_oc_risk = false;
+            }
+        }
+    }
+
+    /// True when the 5 V supply has dipped since boot and the user has not overridden the block.
+    fn power_blocks_overclock(&self) -> bool {
+        (self.telemetry.undervoltage_events > 0 || self.telemetry.undervoltage_alarm)
+            && !self.power_override
+    }
+
+    fn draw_power_guard_card(&mut self, ui: &mut Ui) {
+        if self.telemetry.undervoltage_events == 0 && !self.telemetry.undervoltage_alarm {
+            return;
+        }
+        let t = texts(self.lang);
+        let events = self.telemetry.undervoltage_events.max(1);
+        aorus_card_with_tip(ui, t.oc_power_title, t.oc_power_tip, uc().red, |ui| {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(t.oc_power_blocked.replace("{n}", &events.to_string()))
+                        .strong()
+                        .color(uc().red),
+                )
+                .wrap(),
+            );
+            ui.checkbox(&mut self.power_override, t.oc_power_override)
+                .on_hover_text(t.oc_power_tip);
+        });
+        ui.add_space(12.0);
+    }
+
+    fn draw_trial_card(&mut self, ui: &mut Ui) {
+        use crate::tryboot::Status;
+        let status = self.trial_status.clone();
+        if status == Status::Idle {
+            return;
+        }
+        let t = texts(self.lang);
+        let (text, color) = match &status {
+            Status::Ready(s) => (t.trial_ready.replace("{s}", s), uc().cyan),
+            Status::InTrial(s) => (t.trial_in.replace("{s}", s), uc().amber),
+            Status::Failed(s) => (t.trial_failed.replace("{s}", s), uc().red),
+            Status::NotKept(s) => (t.trial_not_kept.replace("{s}", s), uc().amber),
+            Status::Idle => unreachable!(),
+        };
+        let stable_now = self
+            .stability
+            .as_ref()
+            .map(|r| r.snapshot().verdict == Some(crate::stability::Verdict::Stable))
+            .unwrap_or(false);
+        let mut action: Option<&str> = None;
+        aorus_card_with_tip(ui, t.trial_title, t.trial_tip, color, |ui| {
+            ui.add(egui::Label::new(RichText::new(text).strong().color(uc().text_primary)).wrap());
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                match status {
+                    Status::Ready(_) | Status::NotKept(_) => {
+                        if crate::tryboot::tryboot_path().exists()
+                            && aorus_action_button(
+                                ui,
+                                t.btn_trial_reboot,
+                                uc().btn_orange,
+                                uc().orange,
+                            )
+                            .on_hover_text(t.trial_tip)
+                            .clicked()
+                        {
+                            action = Some("reboot");
+                        }
+                    }
+                    Status::InTrial(_) => {
+                        let keep = ui
+                            .add_enabled(
+                                stable_now,
+                                egui::Button::new(RichText::new(t.btn_trial_keep).strong()),
+                            )
+                            .on_hover_text(t.btn_trial_keep_tip)
+                            .on_disabled_hover_text(t.btn_trial_keep_tip);
+                        if keep.clicked() {
+                            action = Some("keep");
+                        }
+                    }
+                    _ => {}
+                }
+                if ui.button(t.btn_trial_discard).clicked() {
+                    action = Some("discard");
+                }
+            });
+        });
+        match action {
+            Some("reboot") => {
+                let res = crate::tryboot::reboot_into_trial();
+                self.log_result("Trial boot", res);
+            }
+            Some("keep") => {
+                let res = crate::tryboot::keep();
+                if res.is_ok() {
+                    self.boot_oc = load_boot_config();
+                }
+                self.log_result("Keep trial overclock", res);
+            }
+            Some("discard") => {
+                let res = crate::tryboot::discard();
+                self.log_result("Discard trial overclock", res);
+            }
+            _ => {}
+        }
+        if action.is_some() {
+            self.trial_status = crate::tryboot::status();
+        }
+        ui.add_space(12.0);
+    }
+
+    fn draw_stability_card(&mut self, ui: &mut Ui) {
+        use crate::stability::{Report, StabilityTest, Verdict};
+        let t = texts(self.lang);
+        let running = self
+            .stability
+            .as_ref()
+            .map(|s| s.is_running())
+            .unwrap_or(false);
+        if running {
+            ui.ctx().request_repaint_after(Duration::from_millis(500));
+        }
+        let mut start = false;
+        let mut stop = false;
+        aorus_card_with_tip(ui, t.stab_title, t.stab_tip, uc().green, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for m in [1_u32, 3, 10] {
+                    let sel = self.stability_minutes == m;
+                    let resp =
+                        segmented_pill(ui, &format!("{m} min"), sel, uc().btn_green, uc().green);
+                    if resp.clicked() && !running {
+                        self.stability_minutes = m;
+                    }
+                }
+                ui.add_space(8.0);
+                if running {
+                    if aorus_action_button(ui, t.btn_stab_stop, uc().btn_slate, uc().red).clicked()
+                    {
+                        stop = true;
+                    }
+                } else if aorus_action_button(ui, t.btn_stab_start, uc().btn_green, uc().green)
+                    .on_hover_text(t.stab_tip)
+                    .clicked()
+                {
+                    start = true;
+                }
+            });
+
+            let current = self.stability.as_ref().map(|s| s.snapshot());
+            let report: Option<Report> = current.or_else(|| self.last_stability.clone());
+            let Some(r) = report else { return };
+            ui.add_space(6.0);
+            if r.finished || running {
+                ui.add(egui::ProgressBar::new(r.progress()).show_percentage());
+            }
+            egui::Grid::new("stability_grid")
+                .num_columns(2)
+                .spacing([14.0, 4.0])
+                .show(ui, |ui| {
+                    spec_row(
+                        ui,
+                        t.stab_max_temp,
+                        &self.temp_unit.format_temp(r.max_temp_c),
+                    );
+                    let min = if r.min_mhz_under_load == 0 || r.min_mhz_under_load == u32::MAX {
+                        "—".to_string()
+                    } else {
+                        format!("{} / {} MHz", r.min_mhz_under_load, r.target_mhz)
+                    };
+                    spec_row(ui, t.stab_min_clock, &min);
+                    spec_row(ui, t.stab_uv, &r.undervoltage_samples.to_string());
+                });
+            if !running {
+                if !r.finished {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(
+                                t.stab_interrupted
+                                    .replace("{t}", &format!("{:.1}", r.last_temp_c))
+                                    .replace(
+                                        "{m}",
+                                        &r.min_mhz_under_load.min(r.target_mhz).to_string(),
+                                    ),
+                            )
+                            .strong()
+                            .color(uc().red),
+                        )
+                        .wrap(),
+                    );
+                } else if let Some(v) = r.verdict {
+                    let (txt, col) = match v {
+                        Verdict::Stable => (t.stab_v_stable, uc().green),
+                        Verdict::Throttled => (t.stab_v_throttled, uc().amber),
+                        Verdict::TooHot => (t.stab_v_hot, uc().amber),
+                        Verdict::Undervoltage => (t.stab_v_uv, uc().red),
+                        Verdict::Stopped => (t.stab_v_stopped, uc().text_secondary),
+                    };
+                    let prefix = if self.stability.is_none() {
+                        t.stab_last
+                    } else {
+                        ""
+                    };
+                    ui.label(
+                        RichText::new(format!("{prefix} {txt}").trim().to_string())
+                            .strong()
+                            .color(col),
+                    );
+                }
+            }
+        });
+        if stop {
+            if let Some(s) = &self.stability {
+                s.stop();
+            }
+        }
+        if start {
+            let context = match &self.trial_status {
+                crate::tryboot::Status::InTrial(s) => s.clone(),
+                _ => String::new(),
+            };
+            self.stability = Some(StabilityTest::start(
+                Duration::from_secs(self.stability_minutes as u64 * 60),
+                context,
+            ));
+        }
     }
 
     fn draw_runtime_cpu_card(&mut self, ui: &mut Ui) {
@@ -2989,18 +3306,7 @@ impl ArgonControlCenterApp {
             }
 
             ui.add_space(10.0);
-            let save_resp =
-                aorus_full_cta_button(ui, t.btn_save_firmware_oc, uc().btn_orange, uc().orange);
-            if save_resp.clicked() {
-                let res = save_boot_config(&self.boot_oc);
-                self.log_result("Firmware OC (config.txt)", res);
-            }
-            aorus_tooltip(
-                save_resp,
-                t.btn_save_firmware_oc,
-                t.btn_save_firmware_oc_tip,
-                Some(get_boot_config_path()),
-            );
+            self.draw_firmware_save_controls(ui);
         });
     }
 
@@ -3117,7 +3423,7 @@ impl ArgonControlCenterApp {
             let save_resp =
                 aorus_full_cta_button(ui, t.btn_apply_hw_features, uc().btn_orange, uc().orange);
             if save_resp.clicked() {
-                let res = save_boot_config(&self.boot_oc);
+                let res = save_boot_config_scoped(&self.boot_oc, ConfigScope::Features);
                 self.log_result("Hardware Features (config.txt)", res);
             }
             aorus_tooltip(

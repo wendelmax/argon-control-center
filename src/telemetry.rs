@@ -56,6 +56,8 @@ pub struct TelemetryState {
     pub cpu_temp_c: f32,
     pub max_temp_c: f32,
     pub undervoltage_alarm: bool,
+    /// Under-voltage events since boot (kernel log at start-up + events seen while running).
+    pub undervoltage_events: u32,
 
     // Fan
     pub target_fan_speed_pct: u8,
@@ -142,6 +144,7 @@ impl TelemetryState {
             cpu_temp_c: 45.0,
             max_temp_c: 45.0,
             undervoltage_alarm: false,
+            undervoltage_events: crate::power::undervoltage_events_since_boot().unwrap_or(0),
             target_fan_speed_pct: 0,
             manual_fan_override: None,
             argon_service_active: true,
@@ -256,8 +259,12 @@ impl TelemetryState {
                 self.max_temp_c = self.cpu_temp_c;
             }
         }
-        if let Some(alarm) = read_u32_file("/sys/class/hwmon/hwmon1/in0_lcrit_alarm") {
-            self.undervoltage_alarm = alarm != 0;
+        if let Some(alarm) = crate::power::read_alarm() {
+            // Count new events (rising edges) on top of what the kernel logged before start-up.
+            if alarm && !self.undervoltage_alarm {
+                self.undervoltage_events += 1;
+            }
+            self.undervoltage_alarm = alarm;
         }
 
         // 4. Target Fan Speed
