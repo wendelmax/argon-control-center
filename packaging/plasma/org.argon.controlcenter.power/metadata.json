@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.power",
+        "Name": "Argon Power",
+        "Name[pt_BR]": "Argon Energia",
+        "Description": "5 V supply, firmware throttling flags and argononed state.",
+        "Description[pt_BR]": "Fonte de 5 V, flags de limitação do firmware e estado do argononed.",
+        "Icon": "battery-ac-adapter",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.2.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

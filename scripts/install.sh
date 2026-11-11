@@ -11,8 +11,11 @@ APP_DIR="$PREFIX/share/applications"
 BIN_NAME="argon-control-center"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+WIDGET_DIR="$PREFIX/share/plasma/plasmoids"
+
 if [[ "${1:-}" == "--uninstall" ]]; then
     rm -f "$BIN_DIR/$BIN_NAME" "$APP_DIR/$BIN_NAME.desktop"
+    rm -rf "$WIDGET_DIR"/org.argon.controlcenter.*
     command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
     echo "Removed: $BIN_DIR/$BIN_NAME, $APP_DIR/$BIN_NAME.desktop"
     exit 0
@@ -33,7 +36,15 @@ sed "s|^Exec=.*|Exec=$BIN_DIR/$BIN_NAME|" "$BIN_NAME.desktop" > "$APP_DIR/$BIN_N
 chmod 644 "$APP_DIR/$BIN_NAME.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
 
+# Plasma 6 desktop widgets (Add Widgets > "Argon")
+for widget in packaging/plasma/org.argon.controlcenter.*; do
+    rm -rf "$WIDGET_DIR/$(basename "$widget")"
+    mkdir -p "$WIDGET_DIR"
+    cp -r "$widget" "$WIDGET_DIR/"
+done
+
 echo "Installed: $BIN_DIR/$BIN_NAME"
+echo "Plasma widgets: $WIDGET_DIR (Add Widgets > Argon)"
 echo "Menu entry: $APP_DIR/$BIN_NAME.desktop"
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

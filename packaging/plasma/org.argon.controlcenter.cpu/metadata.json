@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.cpu",
+        "Name": "Argon CPU",
+        "Name[pt_BR]": "Argon CPU",
+        "Description": "CPU load per core, clock and governor of the Raspberry Pi.",
+        "Description[pt_BR]": "Carga da CPU por núcleo, clock e governor do Raspberry Pi.",
+        "Icon": "cpu",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.2.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

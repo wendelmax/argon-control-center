@@ -15,3 +15,11 @@ install -Dm644 "$C/argon-control-center.modules-load" "$DEST/usr/lib/modules-loa
 install -Dm755 "$C/setup-permissions.sh" "$DEST/usr/lib/argon-control-center/setup-permissions.sh"
 install -Dm644 "$ROOT/README.md" "$DEST/usr/share/doc/argon-control-center/README.md"
 install -Dm644 "$ROOT/assets/CREDITS.md" "$DEST/usr/share/doc/argon-control-center/CREDITS.md"
+
+# Plasma 6 desktop widgets
+for widget in "$ROOT"/packaging/plasma/org.argon.controlcenter.*; do
+    name="$(basename "$widget")"
+    (cd "$widget" && find . -type f) | while read -r f; do
+        install -Dm644 "$widget/$f" "$DEST/usr/share/plasma/plasmoids/$name/$f"
+    done
+done
