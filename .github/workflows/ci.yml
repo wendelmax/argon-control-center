@@ -21,13 +21,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             pkg-config libgl1-mesa-dev libxkbcommon-dev libwayland-dev \
-            libx11-dev libxcursor-dev libxrandr-dev libxi-dev
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            appstream desktop-file-utils
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Desktop entry and AppStream metadata
+        run: |
+          desktop-file-validate argon-control-center.desktop
+          appstreamcli validate --no-net --pedantic packaging/common/*.metainfo.xml
 
       - name: Format
         run: cargo fmt --check

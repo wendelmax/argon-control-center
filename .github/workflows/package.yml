@@ -51,19 +51,14 @@ jobs:
     container: fedora:latest
     steps:
       - name: Tooling
-        run: dnf install -y rpm-build rpmdevtools git tar systemd-rpm-macros 'dnf-command(builddep)'
+        run: dnf install -y rpm-build git make 'dnf-command(builddep)'
       - uses: actions/checkout@v4
-      - name: Source tarball
-        run: |
-          VERSION=$(rpmspec -q --qf '%{version}\n' packaging/rpm/argon-control-center.spec | head -1)
-          rpmdev-setuptree
-          git config --global --add safe.directory "$PWD"
-          git archive --prefix="argon-control-center-$VERSION/" -o ~/rpmbuild/SOURCES/argon-control-center-$VERSION.tar.gz HEAD
-          cp packaging/common/argon-control-center.sysusers ~/rpmbuild/SOURCES/
+      - name: Source RPM (same Makefile as the COPR build)
+        run: make -f .copr/Makefile srpm outdir="$PWD/srpm"
       - name: Build dependencies
-        run: dnf builddep -y packaging/rpm/argon-control-center.spec
+        run: dnf builddep -y srpm/*.src.rpm
       - name: Build package
-        run: rpmbuild -bb packaging/rpm/argon-control-center.spec
+        run: rpmbuild --rebuild --define "_rpmdir $HOME/rpmbuild/RPMS" srpm/*.src.rpm
       - name: Install and smoke test
         run: |
           dnf install -y ~/rpmbuild/RPMS/*/argon-control-center-*.rpm
@@ -101,6 +96,8 @@ jobs:
           chown -R builder $WORK
           # Arch Linux ARM defaults to .pkg.tar.xz; release assets use .pkg.tar.zst.
           cd $WORK && su builder -c "PKGEXT=.pkg.tar.zst makepkg --noconfirm"
+          # The AUR metadata must be generated without errors.
+          su builder -c "makepkg --printsrcinfo" > /dev/null
       - name: Install and smoke test
         run: |
           pacman -U --noconfirm /home/builder/pkg/argon-control-center-*.pkg.tar.zst
@@ -152,3 +149,23 @@ jobs:
               --notes-file release-notes.md \
               --verify-tag $PRERELEASE
           fi
+
+  aur:
+    name: AUR
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release]
+    uses: ./.github/workflows/aur.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+  copr:
+    name: COPR
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release]
+    uses: ./.github/workflows/copr.yml
+    with:
+      ref: ${{ github.ref_name }}
+    secrets:
+      COPR_CONFIG: ${{ secrets.COPR_CONFIG }}

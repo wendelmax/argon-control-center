@@ -1,0 +1,77 @@
+name: AUR
+
+# Publishes packaging/arch/PKGBUILD to https://aur.archlinux.org/packages/argon-control-center
+# Runs after each GitHub release (called from package.yml) or manually for a released version.
+# Requires the AUR_SSH_PRIVATE_KEY secret: a private key whose public half is registered in
+# the maintainer's AUR account. Without it the job is skipped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to publish (for example 0.2.0)"
+        required: true
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    name: Publish to the AUR
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    env:
+      VERSION: ${{ inputs.version }}
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Check credentials
+        id: key
+        run: |
+          if [ -n "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::AUR_SSH_PRIVATE_KEY is not set; skipping the AUR update."
+          fi
+      - name: Tooling
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          # pacman's download sandbox (Landlock) is not permitted inside the CI container.
+          grep -q '^DisableSandbox' /etc/pacman.conf || sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+          pacman -Syu --noconfirm --needed base-devel git openssh
+          useradd -m builder
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ok == 'true'
+      - name: Update the AUR repository
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          VERSION="${VERSION#v}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cp packaging/arch/aur_known_hosts ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git config --global --add safe.directory '*'
+
+          AUR=/home/builder/aur
+          git clone ssh://aur@aur.archlinux.org/argon-control-center.git "$AUR"
+          chown -R builder "$AUR"
+          su builder -c "sh '$PWD/packaging/arch/aur-publish.sh' '$VERSION' '$AUR'"
+
+          cd "$AUR"
+          git add PKGBUILD .SRCINFO argon-control-center.install
+          if git diff --cached --quiet; then
+            echo "The AUR package is already up to date."
+            exit 0
+          fi
+          git -c user.name=wendelmax -c user.email=wendelmax@users.noreply.github.com \
+            commit -q -m "Update to $VERSION"
+          git push origin HEAD:master
+          echo "Published argon-control-center $VERSION to the AUR."

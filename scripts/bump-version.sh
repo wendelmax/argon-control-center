@@ -6,7 +6,7 @@
 #   scripts/bump-version.sh major    # 0.2.0 -> 1.0.0  breaking changes
 #   scripts/bump-version.sh --tag    # tag the current commit with the Cargo.toml version
 #
-# A bump updates Cargo.toml, Cargo.lock, the RPM spec and the PKGBUILD, and turns the
+# A bump updates Cargo.toml, Cargo.lock, the RPM spec, the PKGBUILD, the AppStream metadata and turns the
 # [Unreleased] section of CHANGELOG.md into the new version. Commit it through a PR; once it
 # is merged, run --tag on main and push the tag to publish the release.
 set -euo pipefail
@@ -16,6 +16,7 @@ cd "$ROOT"
 REPO_URL="https://github.com/wendelmax/argon-control-center"
 SPEC=packaging/rpm/argon-control-center.spec
 PKGBUILD=packaging/arch/PKGBUILD
+METAINFO=packaging/common/io.github.wendelmax.argon_control_center.metainfo.xml
 
 current_version() {
     sed -n 's/^version *= *"\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p' Cargo.toml | head -1
@@ -69,6 +70,9 @@ sed -i "/^%changelog$/a * $SPEC_DATE wendelmax - $NEW-1\n- Release $NEW\n" "$SPE
 
 # PKGBUILD: version, release 1.
 sed -i -e "s/^pkgver=.*/pkgver=$NEW/" -e "s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
+
+# AppStream metadata: newest release first.
+sed -i "s#^  <releases>\$#  <releases>\\n    <release version=\"$NEW\" date=\"$TODAY\">\\n      <url type=\"details\">$REPO_URL/releases/tag/v$NEW</url>\\n    </release>#" "$METAINFO"
 
 # CHANGELOG.md: new section under [Unreleased], comparison links.
 sed -i "s/^## \[Unreleased\]$/## [Unreleased]\n\n## [$NEW] - $TODAY/" CHANGELOG.md
