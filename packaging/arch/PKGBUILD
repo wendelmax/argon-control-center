@@ -1,7 +1,7 @@
 # Maintainer: wendelmax <https://github.com/wendelmax>
 pkgname=argon-control-center
 _reponame=argon-control-center
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Raspberry Pi & Argon40 hardware control center (fan curve, telemetry, overclocking, GPIO lab)"
 # The AUR requires x86_64 support; it builds from source there (monitoring only).
