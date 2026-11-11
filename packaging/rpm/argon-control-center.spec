@@ -1,5 +1,5 @@
 Name:           argon-control-center
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Raspberry Pi & Argon40 hardware control center
 License:        MIT
@@ -58,6 +58,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %doc %{_docdir}/%{name}/CREDITS.md
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
+%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_udevrulesdir}/60-argon-control-center.rules
 %{_sysusersdir}/argon-control-center.conf
 %{_modulesloaddir}/argon-control-center.conf
@@ -67,5 +68,8 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_mandir}/man1/argon-control-center.1*
 
 %changelog
+* Wed Nov 11 2026 wendelmax - 0.2.0-1
+- Release 0.2.0
+
 * Wed Nov 11 2026 wendelmax - 0.1.0-1
 - Initial package
