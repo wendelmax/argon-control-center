@@ -1,7 +1,7 @@
 # Maintainer: wendelmax <https://github.com/wendelmax>
 pkgname=argon-control-center
 _reponame=argon-control-center
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Raspberry Pi & Argon40 hardware control center (fan curve, telemetry, overclocking, GPIO lab)"
 arch=('aarch64' 'armv7h' 'x86_64')

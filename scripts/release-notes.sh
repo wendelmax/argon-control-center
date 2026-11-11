@@ -52,11 +52,11 @@ asset() {
     if [ -n "$f" ]; then basename "$f"; else echo "$2"; fi
 }
 
-DEB_ARM="$(asset "*_arm64.deb" "argon-control-center_${VERSION}_arm64.deb")"
-DEB_AMD="$(asset "*_amd64.deb" "argon-control-center_${VERSION}_amd64.deb")"
-RPM_ARM="$(asset "*.aarch64.rpm" "argon-control-center-${VERSION}-1.aarch64.rpm")"
-RPM_X86="$(asset "*.x86_64.rpm" "argon-control-center-${VERSION}-1.x86_64.rpm")"
-ARCH_PKG="$(asset "*.pkg.tar.zst" "argon-control-center-${VERSION}-1-x86_64.pkg.tar.zst")"
+DEB_ARM="$(asset "*_${VERSION}_arm64.deb" "argon-control-center_${VERSION}_arm64.deb")"
+DEB_AMD="$(asset "*_${VERSION}_amd64.deb" "argon-control-center_${VERSION}_amd64.deb")"
+RPM_ARM="$(asset "*-${VERSION}-*.aarch64.rpm" "argon-control-center-${VERSION}-1.aarch64.rpm")"
+RPM_X86="$(asset "*-${VERSION}-*.x86_64.rpm" "argon-control-center-${VERSION}-1.x86_64.rpm")"
+ARCH_PKG="$(asset "argon-control-center-${VERSION}-*.pkg.tar.zst" "argon-control-center-${VERSION}-1-x86_64.pkg.tar.zst")"
 
 {
     BODY="$(changelog_section)"

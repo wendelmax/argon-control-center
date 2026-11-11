@@ -8,12 +8,15 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-11
+
 ### Added
 - KDE Plasma 6 desktop widgets: CPU, Thermal, GPU, Memory, Network, Storage, Power and System. Metric widgets offer bars, gauges (transparent background, sized to the widget) or a two-minute chart; in a panel they show a compact value. Installed by the packages and by `scripts/install.sh`.
 - `--json`: one-line snapshot of CPU, temperature, fan, memory, disks, network, GPU, power flags and system information, computed in a few milliseconds from the previous reading.
 - Help page in the application describing every feature, with links to the related pages.
 - Terminal interface: opens automatically without a graphical session (or with `--tui`); read-only, btop-style boxes for cpu, mem, net, gpu and argon with gradient meters and history graphs. `--gui` forces the window.
 - Manual page `argon-control-center(1)`, installed by the packages and by `scripts/install.sh`.
+- Application icon (a board sliding out of an aluminium case), used by the menu entry and the window.
 
 ### Fixed
 - The Arch package no longer builds a separate `-debug` package.
@@ -77,5 +80,6 @@ First public release.
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.
 - Hardware access is granted through group membership and udev rules; no setuid binaries or world-writable device nodes are used.
 
-[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wendelmax/argon-control-center/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wendelmax/argon-control-center/releases/tag/v0.1.0
