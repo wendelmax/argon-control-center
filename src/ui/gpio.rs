@@ -395,6 +395,7 @@ impl ArgonControlCenterApp {
         let pins = diagram.pins;
         let searching = !self.gpio_query.trim().is_empty();
         let mut clicked: Option<u8> = None;
+        let mut double: Option<u8> = None;
         for (i, def) in RPI_40PIN_HEADER.iter().enumerate() {
             let HeaderPinKind::Gpio(bcm) = def.kind else {
                 continue;
@@ -443,6 +444,9 @@ impl ArgonControlCenterApp {
             if resp.clicked() {
                 clicked = Some(bcm);
             }
+            if resp.double_clicked() {
+                double = Some(bcm);
+            }
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
@@ -462,6 +466,9 @@ impl ArgonControlCenterApp {
         }
         if let Some(bcm) = clicked {
             self.gpio_lab.selected_bcm = bcm;
+        }
+        if let Some(bcm) = double {
+            self.pin_double_click(bcm);
         }
 
         ui.horizontal_wrapped(|ui| {
@@ -491,6 +498,7 @@ impl ArgonControlCenterApp {
         }
         let selected = self.gpio_lab.selected_bcm;
         let mut clicked: Option<u8> = None;
+        let mut double: Option<u8> = None;
         egui::ScrollArea::vertical()
             .id_salt("gpio_pin_table")
             .max_height(380.0)
@@ -541,16 +549,15 @@ impl ArgonControlCenterApp {
                                 continue;
                             };
                             let is_sel = selected == bcm;
-                            let mut hit = false;
-                            hit |= ui
-                                .selectable_label(is_sel, mono(format!("{:>2}", def.phys_num)))
-                                .clicked();
-                            hit |= ui
-                                .selectable_label(is_sel, mono(format!("GPIO{bcm}")).strong())
-                                .clicked();
-                            hit |= ui
-                                .selectable_label(is_sel, mono(pin_function(def)))
-                                .clicked();
+                            let cells = [
+                                ui.selectable_label(is_sel, mono(format!("{:>2}", def.phys_num))),
+                                ui.selectable_label(is_sel, mono(format!("GPIO{bcm}")).strong()),
+                                ui.selectable_label(is_sel, mono(pin_function(def))),
+                            ];
+                            let hit = cells.iter().any(|r| r.clicked());
+                            if cells.iter().any(|r| r.double_clicked()) {
+                                double = Some(bcm);
+                            }
                             ui.label(
                                 mono(pin.direction.short_label()).color(mode_color(pin.direction)),
                             );
@@ -572,6 +579,33 @@ impl ArgonControlCenterApp {
             });
         if let Some(bcm) = clicked {
             self.gpio_lab.selected_bcm = bcm;
+        }
+        if let Some(bcm) = double {
+            self.pin_double_click(bcm);
+        }
+    }
+
+    /// Double-click on a pin: an output toggles its level, an input is added to or removed
+    /// from the analyzer, and a pin used by an alternate function (I2C, UART...) is left alone.
+    fn pin_double_click(&mut self, bcm: u8) {
+        let Some(pin) = self.gpio_lab.pins.get(bcm as usize) else {
+            return;
+        };
+        match pin.direction {
+            PinDirection::Output => {
+                let level = !pin.level_high;
+                let res = self.gpio_lab.set_gpio_output(bcm, level);
+                self.log_result(
+                    &format!("GPIO{bcm} {}", if level { "HIGH" } else { "LOW" }),
+                    res,
+                );
+            }
+            PinDirection::Input => {
+                let watched = self.gpio_lab.watched_bcm.contains(&bcm);
+                toggle_channel(&mut self.gpio_lab, bcm, !watched);
+                self.gpio_panel = GpioPanel::Analyzer;
+            }
+            _ => {}
         }
     }
 
