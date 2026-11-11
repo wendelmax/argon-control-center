@@ -101,6 +101,8 @@ jobs:
           chown -R builder $WORK
           # Arch Linux ARM defaults to .pkg.tar.xz; release assets use .pkg.tar.zst.
           cd $WORK && su builder -c "PKGEXT=.pkg.tar.zst makepkg --noconfirm"
+          # The AUR metadata must be generated without errors.
+          su builder -c "makepkg --printsrcinfo" > /dev/null
       - name: Install and smoke test
         run: |
           pacman -U --noconfirm /home/builder/pkg/argon-control-center-*.pkg.tar.zst
@@ -152,3 +154,13 @@ jobs:
               --notes-file release-notes.md \
               --verify-tag $PRERELEASE
           fi
+
+  aur:
+    name: AUR
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release]
+    uses: ./.github/workflows/aur.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
