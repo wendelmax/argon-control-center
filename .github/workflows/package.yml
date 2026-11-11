@@ -83,6 +83,8 @@ jobs:
     steps:
       - name: Tooling
         run: |
+          # pacman's download sandbox (Landlock) is not permitted inside the CI container.
+          grep -q '^DisableSandbox' /etc/pacman.conf || sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
           pacman-key --init
           pacman-key --populate archlinuxarm
           pacman -Syu --noconfirm --needed base-devel git cargo libglvnd libxkbcommon wayland libx11
