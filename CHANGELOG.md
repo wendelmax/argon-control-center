@@ -24,6 +24,7 @@ First public release.
 - Settings page with independent appearance options: sidebar or top-tab navigation, system or AORUS colors, and compact, charts or gauges dashboards, plus interface scaling from 80% to 150%.
 - System colors follow the desktop scheme on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, in light and dark variants with enforced contrast.
 - Layouts adapt to narrow windows: dashboard rings and controls reflow, the GPIO header switches to a single column and navigation becomes a wrapping tab strip.
+- Short labels on buttons, cards and options; file paths, `config.txt` keys and explanations are shown in tooltips.
 - English interface by default, with Brazilian Portuguese available in Settings or with `--pt`.
 - Preferences (appearance, language, temperature unit, scale and last page) are remembered between sessions. The temperature unit shown in the app is independent of the case OLED setting.
 - Packages for Debian and Ubuntu (`.deb`, amd64 and arm64), Fedora (`.rpm`, x86_64 and aarch64) and Arch Linux (`.pkg.tar.zst` and `PKGBUILD`).
