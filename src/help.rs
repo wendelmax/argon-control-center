@@ -45,8 +45,8 @@ static EN: [Section; 11] = [
     ),
     s(
         "Overclock",
-        "Live changes (governor, minimum and maximum clock) apply immediately and are reset at reboot. Firmware settings go to config.txt and apply at the next boot; presets and limits match the detected board.\n\n\
-         Safe overclocking:\n\
+        "The live strip shows the CPU clock against the factory and boot clocks, the temperature against temp_limit, the core voltage and the firmware flags (red: now, amber: since boot). Profile cards show the clock and voltage each profile sets on this board. Live changes (governor, minimum and maximum clock) apply immediately and are reset at reboot. Firmware settings go to config.txt and apply at the next boot; presets and limits match the detected board.\n\n\
+         Safe overclocking (shown as steps when the settings exceed the factory clock):\n\
          • Power-supply guard: settings above factory clocks are blocked while under-voltage has been detected since boot.\n\
          • Trial boot: the new settings boot once from tryboot.txt; if the Pi hangs, switch it off and on to return to the previous settings.\n\
          • Stability test: loads every core while recording temperature, clock and the 5 V supply, then keep or discard the trial.",
@@ -124,8 +124,8 @@ static PT: [Section; 11] = [
     ),
     s(
         "Overclock",
-        "Mudanças ao vivo (governor, clock mínimo e máximo) valem na hora e voltam ao padrão no reboot. Ajustes de firmware vão para o config.txt e valem no próximo boot; perfis e limites seguem a placa detectada.\n\n\
-         Overclock seguro:\n\
+        "A faixa ao vivo mostra o clock da CPU frente aos clocks de fábrica e de boot, a temperatura frente ao temp_limit, a tensão do core e as flags do firmware (vermelho: agora, âmbar: desde o boot). Os cartões de perfil mostram o clock e a tensão que cada perfil define nesta placa. Mudanças ao vivo (governor, clock mínimo e máximo) valem na hora e voltam ao padrão no reboot. Ajustes de firmware vão para o config.txt e valem no próximo boot; perfis e limites seguem a placa detectada.\n\n\
+         Overclock seguro (mostrado em etapas quando os ajustes passam do clock de fábrica):\n\
          • Trava da fonte: ajustes acima do padrão de fábrica ficam bloqueados se houve subtensão desde o boot.\n\
          • Boot de teste: os novos ajustes iniciam uma única vez pelo tryboot.txt; se o Pi travar, desligue e ligue para voltar aos ajustes anteriores.\n\
          • Teste de estabilidade: carrega todos os núcleos registrando temperatura, clock e a fonte de 5 V; depois mantenha ou descarte o teste.",
