@@ -39,8 +39,8 @@ static EN: [Section; 11] = [
     ),
     s(
         "Fan",
-        "Edit the argononed fan curve by dragging its points, or pick a profile (Silent, Standard, Performance, Full speed). Saving writes /etc/argononed.conf and restarts the service.\n\n\
-         Manual mode sets a fixed speed directly over I2C. The automatic curve only works while argononed is running. Both need the I2C bus: when it is disabled in config.txt the page shows a warning with Enable I2C, and the footer shows Fan: I2C off.",
+        "The live strip shows the fan turning at the current duty, the CPU temperature against your curve thresholds and the state of argononed, I2C and the curve. In the curve, drag a point to move it, double-click to add one and right-click to remove one; the pulsing dot is where the fan is now and the trail shows the last minute. Profile cards (Silent, Standard, Performance, Full speed) load a curve. Changes are only applied with Save curve in the bar at the bottom, which writes /etc/argononed.conf and restarts the service; Undo restores the saved curve.\n\n\
+         Manual mode sets a fixed speed directly over I2C: turn the knob (drag or scroll) or pick 0-100 %, then Apply. The automatic curve only works while argononed is running. Both need the I2C bus: when it is disabled in config.txt the page shows a warning with Enable I2C, and the footer shows Fan: I2C off.",
         Some(ActiveTab::SmartFan),
     ),
     s(
@@ -118,8 +118,8 @@ static PT: [Section; 11] = [
     ),
     s(
         "Ventoinha",
-        "Edite a curva da ventoinha do argononed arrastando os pontos ou escolha um perfil (Silencioso, Padrão, Desempenho, Máxima). Salvar grava /etc/argononed.conf e reinicia o serviço.\n\n\
-         O modo manual define uma rotação fixa direto pelo I2C. A curva automática só funciona com o argononed em execução. Os dois precisam do barramento I2C: quando ele está desativado no config.txt, a página mostra um aviso com Ativar I2C e o rodapé mostra Ventoinha: I2C desligado.",
+        "A faixa ao vivo mostra a ventoinha girando na rotação atual, a temperatura da CPU frente aos limites da curva e o estado do argononed, do I2C e da curva. Na curva, arraste um ponto para movê-lo, clique duplo para adicionar e botão direito para remover; o ponto pulsante é onde a ventoinha está agora e o rastro mostra o último minuto. Os cartões de perfil (Silencioso, Padrão, Desempenho, Máxima) carregam uma curva. As mudanças só valem com Salvar curva na barra inferior, que grava /etc/argononed.conf e reinicia o serviço; Desfazer volta à curva salva.\n\n\
+         O modo manual define uma rotação fixa direto pelo I2C: gire o botão (arraste ou role) ou escolha 0-100 %, depois Aplicar. A curva automática só funciona com o argononed em execução. Os dois precisam do barramento I2C: quando ele está desativado no config.txt, a página mostra um aviso com Ativar I2C e o rodapé mostra Ventoinha: I2C desligado.",
         Some(ActiveTab::SmartFan),
     ),
     s(
