@@ -11,7 +11,8 @@ depends=('gcc-libs' 'glibc' 'libglvnd' 'libxkbcommon' 'wayland' 'libx11' 'system
 makedepends=('cargo')
 optdepends=('polkit: write system files and control argononed from the GUI'
             'i2c-tools: I2C scan in the GPIO lab'
-            'libgpiod: GPIO tools')
+            'libgpiod: GPIO tools'
+            'raspberrypi-utils: GPU clocks and throttling flags (vcgencmd)')
 install=argon-control-center.install
 source=("$_reponame-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')

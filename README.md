@@ -59,6 +59,10 @@ The board and the Argon case are detected automatically at startup, so presets a
 - CPU frequency, governor and per-core load, SoC temperature with peak, fan duty, memory and swap, network throughput, disks and RAID arrays, and the 5 V under-voltage alarm.
 - 60-second history charts. Slow probes run on a worker thread so the interface stays responsive.
 
+**GPU**
+- V3D load per queue (render, geometry, compute) from the kernel's `gpu_stats`, CMA memory used by the GPU and display, and the GPU clock.
+- With firmware access (`vcgencmd`): live GPU / core / H.264 clocks, core voltage, GPU memory split and the throttling flags (under-voltage, capped clock, throttling, soft temperature limit — now and since boot), which also feed the power-supply guard and the stability test.
+
 **Fan control**
 - Drag-and-drop curve editor for the CPU (`/etc/argononed.conf`) and disk (`/etc/argononed-hdd.conf`) curves.
 - Silent, Standard, Performance and Full Speed profiles, plus an immediate manual override over I2C.
@@ -152,6 +156,7 @@ argon-control-center
 | Option | Description |
 |---|---|
 | `--status`, `-s` | Print telemetry, detected hardware, power events and the current overclock, then exit |
+| `--doctor` | Report which hardware interfaces and tools are available to the current user, and how to enable the missing ones |
 | `--stress <seconds>` | Run the stability test without the interface; exits with status 1 if the result is not stable |
 | `--pt`, `--lang=pt` | Start in Brazilian Portuguese |
 | `--en`, `--lang=en` | Start in English |
@@ -225,8 +230,9 @@ The application never needs to run as root. Privileged writes prompt for a passw
 | I2C (case detection, fan override, console) | `i2c` group |
 | GPIO lab | `gpio` group |
 | Serial console | `dialout` (Debian, Fedora) or `uucp` (Arch) |
+| GPU / core clocks, throttling flags (`vcgencmd`) | `video` group (`/dev/vcio`) and `vcgencmd` installed |
 
-The packages create the groups, install udev rules for `/dev/i2c-*`, `/dev/gpiochip*` and `/dev/gpiomem*`, and load `i2c-dev` at boot. The user who installed the package with `sudo` is added to the groups automatically.
+The packages create the groups, install udev rules for `/dev/i2c-*`, `/dev/gpiochip*`, `/dev/gpiomem*` and `/dev/vcio` (the firmware mailbox, with the same permissions as Raspberry Pi OS), load `i2c-dev` at boot, and print which optional tools are present. The user who installed the package with `sudo` is added to the groups automatically.
 
 For installations from source, use **Unlock Direct Hardware Access** in the GPIO lab, or run:
 
@@ -234,7 +240,7 @@ For installations from source, use **Unlock Direct Hardware Access** in the GPIO
 sudo packaging/common/setup-permissions.sh "$USER"
 ```
 
-No setuid binaries or world-writable device nodes are used.
+No setuid binaries or world-writable device nodes are used. Run `argon-control-center --doctor` (or open Settings > About) to see what is available to your user.
 
 ## Building from source
 
@@ -325,6 +331,8 @@ src/
   settings.rs        user preferences
   i18n.rs            English and Portuguese strings
   privileged.rs      Polkit elevation and atomic writes
+  gpu.rs             V3D load, CMA memory and firmware values (vcgencmd)
+  doctor.rs          hardware access self-check
   pinout.rs          GPIO pin-out diagram rendering and pin positions
   power.rs           5 V supply monitoring
   stability.rs       CPU stability test

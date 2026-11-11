@@ -61,6 +61,15 @@ pub struct TelemetryState {
     /// Under-voltage events since boot (kernel log at start-up + events seen while running).
     pub undervoltage_events: u32,
 
+    // GPU (each source optional, see crate::gpu)
+    pub gpu_load: Option<crate::gpu::GpuLoad>,
+    pub gpu_history: VecDeque<f32>,
+    /// CMA pool (GPU / display memory): (used MB, total MB).
+    pub cma_mb: Option<(u64, u64)>,
+    /// Firmware values via vcgencmd, refreshed every 5 s.
+    pub firmware: crate::gpu::Firmware,
+    gpu_sampler: crate::gpu::GpuSampler,
+
     // Fan
     pub target_fan_speed_pct: u8,
     pub manual_fan_override: Option<u8>,
@@ -148,6 +157,11 @@ impl TelemetryState {
             max_temp_c: 45.0,
             undervoltage_alarm: false,
             undervoltage_events: crate::power::undervoltage_events_since_boot().unwrap_or(0),
+            gpu_load: None,
+            gpu_history: VecDeque::from(vec![0.0; HISTORY_LEN]),
+            cma_mb: None,
+            firmware: crate::gpu::Firmware::default(),
+            gpu_sampler: crate::gpu::GpuSampler::default(),
             target_fan_speed_pct: 0,
             manual_fan_override: None,
             argon_service_active: true,
@@ -320,6 +334,14 @@ impl TelemetryState {
         // 8. Push rolling history
         push_history(&mut self.temp_history, self.cpu_temp_c);
         push_history(&mut self.cpu_history, self.cpu_total_usage_pct);
+
+        // GPU load (V3D gpu_stats) and CMA memory.
+        self.gpu_load = self.gpu_sampler.sample();
+        push_history(
+            &mut self.gpu_history,
+            self.gpu_load.map(|l| l.overall()).unwrap_or(0.0),
+        );
+        self.cma_mb = crate::gpu::cma_usage();
         push_history(&mut self.fan_history, self.target_fan_speed_pct as f32);
         push_history(&mut self.freq_history, self.cpu_cur_freq_mhz as f32);
         push_history(&mut self.ram_history, self.ram_usage_pct);
@@ -363,6 +385,7 @@ impl TelemetryState {
         self.argon_service_status = d.service_status;
         self.argon_service_enabled_boot = d.service_enabled_boot;
         self.ip_address = d.ip_address;
+        self.firmware = d.firmware;
     }
 
     pub fn format_uptime(&self) -> String {
@@ -547,6 +570,7 @@ struct SlowData {
     service_status: String,
     service_enabled_boot: bool,
     ip_address: String,
+    firmware: crate::gpu::Firmware,
 }
 
 impl SlowData {
@@ -559,6 +583,7 @@ impl SlowData {
             service_status,
             service_enabled_boot: crate::argon::get_argononed_boot_enabled(),
             ip_address: detect_local_ip(),
+            firmware: crate::gpu::read_firmware(),
         }
     }
 }

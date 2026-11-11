@@ -39,6 +39,9 @@ pub struct Report {
     pub last_temp_c: f32,
     pub throttled_samples: u32,
     pub undervoltage_samples: u32,
+    /// Firmware throttling flags newly set during the test (bits 16-19 of get_throttled).
+    #[serde(default)]
+    pub firmware_new_flags: u32,
     pub finished: bool,
     pub verdict: Option<Verdict>,
     /// Trial boot summary when the test ran during a tryboot.
@@ -57,6 +60,7 @@ impl Report {
             last_temp_c: 0.0,
             throttled_samples: 0,
             undervoltage_samples: 0,
+            firmware_new_flags: 0,
             finished: false,
             verdict: None,
             context,
@@ -65,11 +69,15 @@ impl Report {
 
     /// Verdict from the collected samples (first problem wins, most serious first).
     pub fn evaluate(&self) -> Verdict {
-        if self.undervoltage_samples > 0 {
+        let fw = crate::gpu::Throttled(self.firmware_new_flags);
+        if self.undervoltage_samples > 0 || fw.undervoltage_since_boot() {
             Verdict::Undervoltage
-        } else if self.max_temp_c >= THROTTLE_TEMP_C {
+        } else if self.max_temp_c >= THROTTLE_TEMP_C || fw.soft_temp_limit_since_boot() {
             Verdict::TooHot
-        } else if self.throttled_samples >= 3 {
+        } else if self.throttled_samples >= 3
+            || fw.throttled_since_boot()
+            || fw.freq_capped_since_boot()
+        {
             Verdict::Throttled
         } else {
             Verdict::Stable
@@ -141,6 +149,8 @@ impl StabilityTest {
             .map(|n| n.get() as u32)
             .unwrap_or(4);
         let target = cpu_mhz("scaling_max_freq");
+        // Firmware "since boot" flags before the test; new ones set during it count as problems.
+        let fw_before = crate::gpu::read_throttled().map(|t| t.0);
         let report = Arc::new(Mutex::new(Report::new(
             duration.as_secs() as u32,
             threads,
@@ -186,6 +196,11 @@ impl StabilityTest {
                 stop.store(true, Ordering::Relaxed);
                 let mut r = report.lock().unwrap();
                 r.finished = true;
+                if let (Some(before), Some(after)) =
+                    (fw_before, crate::gpu::read_throttled().map(|t| t.0))
+                {
+                    r.firmware_new_flags = (after & !before) & 0x000F_0000;
+                }
                 r.verdict = Some(if user_stopped {
                     Verdict::Stopped
                 } else {
@@ -254,6 +269,15 @@ mod tests {
         r.max_temp_c = 81.0;
         assert_eq!(r.evaluate(), Verdict::TooHot);
         r.undervoltage_samples = 1;
+        assert_eq!(r.evaluate(), Verdict::Undervoltage);
+    }
+
+    #[test]
+    fn firmware_flags_set_during_test_change_the_verdict() {
+        let mut r = report();
+        r.firmware_new_flags = 1 << 18; // throttled occurred
+        assert_eq!(r.evaluate(), Verdict::Throttled);
+        r.firmware_new_flags = 1 << 16; // under-voltage occurred
         assert_eq!(r.evaluate(), Verdict::Undervoltage);
     }
 

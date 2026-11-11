@@ -8,7 +8,7 @@ Priority: optional
 Homepage: https://github.com/wendelmax/argon-config-rs
 Depends: libc6, libgcc-s1, libgl1, libegl1, libxkbcommon0, libwayland-client0 | libx11-6, udev
 Recommends: pkexec | policykit-1, i2c-tools, gpiod
-Suggests: raspi-utils
+Suggests: raspi-utils | raspi-utils-core | libraspberrypi-bin
 Description: Raspberry Pi & Argon40 hardware control center
  Desktop app to monitor and configure a Raspberry Pi in an Argon40 case:
  live telemetry, fan curve editor, board-aware overclocking (Pi 3/4/5),

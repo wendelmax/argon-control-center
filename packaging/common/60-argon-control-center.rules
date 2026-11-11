@@ -9,3 +9,7 @@ SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
 
 # Raspberry Pi GPIO register window used by pinctrl (/dev/gpiomem, /dev/gpiomem0..4 on Pi 5)
 KERNEL=="gpiomem*", GROUP="gpio", MODE="0660"
+
+# Firmware mailbox (/dev/vcio) used by vcgencmd: GPU / core clocks, core voltage and the
+# throttling flags. Same permissions as Raspberry Pi OS.
+KERNEL=="vcio", GROUP="video", MODE="0660"

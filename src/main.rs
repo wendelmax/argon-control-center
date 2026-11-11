@@ -1,6 +1,8 @@
 pub mod argon;
 pub mod board;
+pub mod doctor;
 pub mod gpio_lab;
+pub mod gpu;
 pub mod i18n;
 pub mod overclock;
 pub mod pinout;
@@ -35,6 +37,11 @@ fn main() -> eframe::Result<()> {
     } else {
         None
     };
+
+    if args.iter().any(|a| a == "--doctor") {
+        print!("{}", crate::doctor::report());
+        return Ok(());
+    }
 
     if let Some(pos) = args.iter().position(|a| a == "--stress") {
         let secs: u64 = args.get(pos + 1).and_then(|v| v.parse().ok()).unwrap_or(60);

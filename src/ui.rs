@@ -831,6 +831,10 @@ impl ArgonControlCenterApp {
         let mut go: Option<ActiveTab> = None;
         self.btop_cpu_box(ui, &mut go);
         ui.add_space(10.0);
+        if self.gpu_available() {
+            self.btop_gpu_box(ui);
+            ui.add_space(10.0);
+        }
         self.btop_mem_box(ui);
         ui.add_space(10.0);
         self.btop_net_box(ui);
@@ -962,6 +966,104 @@ impl ArgonControlCenterApp {
                             &format!("{:.0}/{:.0}G", d.used_gb, d.total_gb),
                         )
                         .on_hover_text(format!("{} ({})", d.mount_point, d.device));
+                    }
+                },
+            );
+        });
+    }
+
+    /// True when at least one GPU source (V3D load, CMA, firmware clocks) is readable.
+    fn gpu_available(&self) -> bool {
+        let tel = &self.telemetry;
+        tel.gpu_load.is_some() || tel.cma_mb.is_some() || tel.firmware.v3d_mhz.is_some()
+    }
+
+    /// GPU clock to show: live V3D clock from the firmware, else the configured `gpu_freq`.
+    fn gpu_clock_text(&self) -> String {
+        match self.telemetry.firmware.v3d_mhz {
+            Some(mhz) => format!("{mhz} MHz"),
+            None => format!("{} MHz (config)", self.boot_oc.gpu_freq_mhz),
+        }
+    }
+
+    fn btop_gpu_box(&self, ui: &mut Ui) {
+        let t = texts(self.lang);
+        let pal = self.active_palette();
+        let tel = &self.telemetry;
+        btop_box(ui, "gpu", pal.positive_green, |ui| {
+            two_columns(
+                ui,
+                |ui| {
+                    if let Some(l) = tel.gpu_load {
+                        gradient_meter(
+                            ui,
+                            t.gpu_render,
+                            l.render / 100.0,
+                            &format!("{:5.1}%", l.render),
+                        );
+                        gradient_meter(ui, t.gpu_bin, l.bin / 100.0, &format!("{:5.1}%", l.bin));
+                        gradient_meter(
+                            ui,
+                            t.gpu_compute,
+                            l.csd / 100.0,
+                            &format!("{:5.1}%", l.csd),
+                        );
+                    }
+                    if let Some((used, total)) = tel.cma_mb {
+                        gradient_meter(
+                            ui,
+                            "CMA",
+                            used as f32 / total.max(1) as f32,
+                            &format!("{used}/{total}M"),
+                        )
+                        .on_hover_text(t.gpu_cma_tip);
+                    }
+                },
+                |ui| {
+                    let fw = &tel.firmware;
+                    let txt = uc().text_primary;
+                    // Clocks side by side; without firmware access, the configured clock.
+                    if fw.v3d_mhz.is_some() || fw.core_mhz.is_some() {
+                        let mut clocks = Vec::new();
+                        if let Some(m) = fw.v3d_mhz {
+                            clocks.push(("v3d", format!("{m} MHz"), txt));
+                        }
+                        if let Some(m) = fw.core_mhz {
+                            clocks.push(("core", format!("{m} MHz"), txt));
+                        }
+                        if let Some(m) = fw.h264_mhz {
+                            clocks.push(("h264", format!("{m} MHz"), txt));
+                        }
+                        info_pairs_row(ui, &clocks);
+                    } else {
+                        info_row(ui, t.mt_clock, &self.gpu_clock_text(), txt, false);
+                    }
+                    // Electrical / memory / activity.
+                    let mut misc = Vec::new();
+                    if let Some(v) = fw.core_volts {
+                        misc.push(("Vcore", format!("{v:.3} V"), txt));
+                    }
+                    if let Some(mb) = fw.gpu_mem_mb {
+                        misc.push(("split", format!("{mb} MB"), txt));
+                    }
+                    if let Some(l) = tel.gpu_load {
+                        misc.push(("jobs/s", format!("{:.0}", l.render_jobs_per_s), txt));
+                    }
+                    info_pairs_row(ui, &misc);
+                    // Throttling status on its own line (can be long).
+                    if let Some(th) = fw.throttled {
+                        let (text, bad) = throttle_summary(th, self.lang);
+                        info_row(
+                            ui,
+                            t.mt_throttle,
+                            &text,
+                            if bad {
+                                pal.negative_red
+                            } else {
+                                pal.positive_green
+                            },
+                            false,
+                        );
                     }
                 },
             );
@@ -1399,7 +1501,43 @@ impl ArgonControlCenterApp {
 
         ui.add_space(12.0);
 
-        // 6. Storage (full row). System details live in the footer.
+        // 6. GPU (full row), when a source is available.
+        if self.gpu_available() {
+            let tel = &self.telemetry;
+            aorus_card_with_tip(ui, t.g_gpu, t.gpu_tip, pal.positive_green, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    if let Some(l) = tel.gpu_load {
+                        legend_badge(
+                            ui,
+                            &format!("{} {:.1}%", t.gpu_render, l.render),
+                            pal.positive_green,
+                        );
+                        ui.add_space(8.0);
+                        legend_badge(ui, &format!("{} {:.1}%", t.gpu_bin, l.bin), pal.focus_blue);
+                        ui.add_space(8.0);
+                    }
+                    if let Some((used, total)) = tel.cma_mb {
+                        legend_badge(ui, &format!("CMA {used}/{total} MB"), pal.visited_purple);
+                        ui.add_space(8.0);
+                    }
+                    ui.label(
+                        RichText::new(self.gpu_clock_text())
+                            .size(11.5)
+                            .color(uc().text_secondary),
+                    );
+                });
+                ui.add_space(6.0);
+                draw_kde_area_line_chart(
+                    ui,
+                    130.0,
+                    &[(&tel.gpu_history, pal.positive_green, 100.0)],
+                    &pal,
+                );
+            });
+            ui.add_space(12.0);
+        }
+
+        // 7. Storage (full row). System details live in the footer.
         self.draw_storage_card(ui);
     }
 
@@ -1534,6 +1672,55 @@ impl ArgonControlCenterApp {
         );
 
         ui.add_space(12.0);
+
+        // GPU: load, CMA memory and clock, when available.
+        if self.gpu_available() {
+            let mut gpu: Vec<GaugeSpec> = Vec::new();
+            if let Some(l) = tel.gpu_load {
+                gpu.push(GaugeSpec {
+                    title: t.gpu_render.into(),
+                    ratio: l.render / 100.0,
+                    value: format!("{:.0}", l.render),
+                    unit: "%".into(),
+                    sub: format!("{:.0} jobs/s", l.render_jobs_per_s),
+                    color: level_color(l.render / 100.0),
+                    tip: t.gpu_tip,
+                    tab: None,
+                });
+            }
+            if let Some((used, total)) = tel.cma_mb {
+                let frac = used as f32 / total.max(1) as f32;
+                gpu.push(GaugeSpec {
+                    title: "CMA".into(),
+                    ratio: frac,
+                    value: format!("{:.0}", frac * 100.0),
+                    unit: "%".into(),
+                    sub: format!("{used}/{total} MB"),
+                    color: pal.visited_purple,
+                    tip: t.gpu_cma_tip,
+                    tab: None,
+                });
+            }
+            let (mhz, live) = match tel.firmware.v3d_mhz {
+                Some(m) => (m, true),
+                None => (self.boot_oc.gpu_freq_mhz, false),
+            };
+            let max = crate::board::current().oc.gpu_range.1.max(1);
+            gpu.push(GaugeSpec {
+                title: t.gpu_clock.into(),
+                ratio: mhz as f32 / max as f32,
+                value: mhz.to_string(),
+                unit: "MHz".into(),
+                sub: if live { String::new() } else { "config".into() },
+                color: pal.focus_blue,
+                tip: t.gpu_tip,
+                tab: Some(ActiveTab::Overclocking),
+            });
+            aorus_card_with_tip(ui, t.g_gpu, t.gpu_tip, pal.positive_green, |ui| {
+                gauge_grid(ui, &gpu, 140.0, 150.0, &mut go);
+            });
+            ui.add_space(12.0);
+        }
 
         // Storage: one gauge per mounted disk.
         let disks: Vec<GaugeSpec> = tel
@@ -1996,6 +2183,28 @@ impl ArgonControlCenterApp {
             }
             self.log_result("Argon temperature unit", res);
         }
+
+        ui.add_space(12.0);
+        aorus_card_with_tip(ui, t.set_hw_access, t.set_hw_access_tip, uc().green, |ui| {
+            for c in crate::doctor::run() {
+                let resp = info_row(
+                    ui,
+                    if c.ok { "ok" } else { "--" },
+                    c.name,
+                    if c.ok {
+                        uc().green
+                    } else {
+                        uc().text_secondary
+                    },
+                    false,
+                );
+                resp.on_hover_text(if c.ok {
+                    c.enables.to_string()
+                } else {
+                    format!("{}\n\n{}", c.enables, c.fix)
+                });
+            }
+        });
 
         ui.add_space(12.0);
         aorus_card_with_tip(ui, t.set_about, t.set_about_tip, uc().amber, |ui| {
@@ -2648,13 +2857,24 @@ impl ArgonControlCenterApp {
     }
 
     /// True when the 5 V supply has dipped since boot and the user has not overridden the block.
+    /// Under-voltage seen since boot: kernel log, rpi_volt alarm or firmware flags.
+    fn power_problem(&self) -> bool {
+        let tel = &self.telemetry;
+        tel.undervoltage_events > 0
+            || tel.undervoltage_alarm
+            || tel
+                .firmware
+                .throttled
+                .map(|t| t.undervoltage_now() || t.undervoltage_since_boot())
+                .unwrap_or(false)
+    }
+
     fn power_blocks_overclock(&self) -> bool {
-        (self.telemetry.undervoltage_events > 0 || self.telemetry.undervoltage_alarm)
-            && !self.power_override
+        self.power_problem() && !self.power_override
     }
 
     fn draw_power_guard_card(&mut self, ui: &mut Ui) {
-        if self.telemetry.undervoltage_events == 0 && !self.telemetry.undervoltage_alarm {
+        if !self.power_problem() {
             return;
         }
         let t = texts(self.lang);
@@ -2668,6 +2888,15 @@ impl ArgonControlCenterApp {
                 )
                 .wrap(),
             );
+            if let Some(th) = self.telemetry.firmware.throttled {
+                let (text, _) = throttle_summary(th, self.lang);
+                ui.label(
+                    RichText::new(format!("{}: {text}", t.mt_throttle))
+                        .size(12.0)
+                        .color(uc().text_secondary),
+                )
+                .on_hover_text("vcgencmd get_throttled");
+            }
             ui.checkbox(&mut self.power_override, t.oc_power_override)
                 .on_hover_text(t.oc_power_tip);
         });
@@ -3050,6 +3279,25 @@ impl ArgonControlCenterApp {
                                 self.selected_oc_preset = OcPreset::Custom;
                             }
                             ui.end_row();
+                            if self.gpu_available() {
+                                ui.label("");
+                                let load = self
+                                    .telemetry
+                                    .gpu_load
+                                    .map(|l| format!("{:.0}%", l.overall()))
+                                    .unwrap_or_else(|| "—".into());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{}: {load} · {}",
+                                        t.gpu_now,
+                                        self.gpu_clock_text()
+                                    ))
+                                    .size(11.5)
+                                    .color(uc().text_secondary),
+                                )
+                                .on_hover_text(t.gpu_tip);
+                                ui.end_row();
+                            }
 
                             if oc_prof.uses_ov_delta {
                                 label_with_tip(
@@ -5543,5 +5791,79 @@ fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut 
         left(ui);
         ui.add_space(6.0);
         right(ui);
+    }
+}
+
+/// Human summary of the firmware throttling flags; `true` when anything was reported.
+fn throttle_summary(th: crate::gpu::Throttled, lang: Language) -> (String, bool) {
+    let t = texts(lang);
+    if !th.any() {
+        return (t.thr_ok.to_string(), false);
+    }
+    let mut now = Vec::new();
+    let mut boot = Vec::new();
+    for (active, past, name) in [
+        (
+            th.undervoltage_now(),
+            th.undervoltage_since_boot(),
+            t.thr_uv,
+        ),
+        (
+            th.freq_capped_now(),
+            th.freq_capped_since_boot(),
+            t.thr_capped,
+        ),
+        (
+            th.throttled_now(),
+            th.throttled_since_boot(),
+            t.thr_throttled,
+        ),
+        (
+            th.soft_temp_limit_now(),
+            th.soft_temp_limit_since_boot(),
+            t.thr_soft,
+        ),
+    ] {
+        if active {
+            now.push(name);
+        } else if past {
+            boot.push(name);
+        }
+    }
+    let mut parts = Vec::new();
+    if !now.is_empty() {
+        parts.push(format!("{} ({})", now.join(", "), t.thr_now));
+    }
+    if !boot.is_empty() {
+        parts.push(format!("{} ({})", boot.join(", "), t.thr_boot));
+    }
+    (parts.join("; "), true)
+}
+
+/// Several `key value` pairs on one line, in equal-width cells (related values grouped).
+fn info_pairs_row(ui: &mut Ui, pairs: &[(&str, String, Color32)]) {
+    if pairs.is_empty() {
+        return;
+    }
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
+    let p = ui.painter_at(rect);
+    let mono = FontId::monospace(12.0);
+    let cell = rect.width() / pairs.len() as f32;
+    for (i, (key, value, color)) in pairs.iter().enumerate() {
+        let x = rect.left() + i as f32 * cell;
+        let key_galley = p.layout_no_wrap(key.to_string(), mono.clone(), uc().heading);
+        let key_w = key_galley.size().x;
+        p.galley(
+            Pos2::new(x, rect.center().y - key_galley.size().y / 2.0),
+            key_galley,
+            uc().heading,
+        );
+        p.text(
+            Pos2::new(x + key_w + 6.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            value,
+            mono.clone(),
+            *color,
+        );
     }
 }

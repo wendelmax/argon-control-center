@@ -21,6 +21,10 @@ First public release.
 - `config.txt` hardware toggles: I2C, SPI, I2S, audio, UART, VC4 KMS, camera and display detection, Argon BLSTR DAC and IR receiver.
 - GPIO and serial lab: 40-pin logic analyzer and a serial/I2C console.
 - `argononed` service management with an explanation of its role before it is stopped.
+- GPU telemetry: V3D load per queue (render, geometry, compute) from `gpu_stats`, CMA memory and the GPU clock, shown in every dashboard style and next to `gpu_freq` on the Overclock page. With firmware access, live GPU / core / H.264 clocks, core voltage, GPU memory split and throttling flags.
+- Firmware throttling flags strengthen the power-supply guard and the stability test (throttling or under-voltage reported by the firmware during a test changes the verdict).
+- `--doctor` command and a Hardware access section in Settings > About listing what the current user can use and how to enable the rest.
+- Packages and the permission setup grant the `video` group access to `/dev/vcio` (as on Raspberry Pi OS) and report missing optional tools.
 - Each dashboard style has its own presentation:
   - Compact (btop-style): one titled box per row (cpu, mem, net, argon), each split into two columns, with gradient block meters filled left to right from 0 to 100 % (per core, memory, swap, disks, network, fan, temperature) and key/value lines; no graphs.
   - Gauges: radial gauges only — total CPU plus one gauge per core, clock, temperature, fan, memory, swap, one gauge per disk, and network download / upload.
