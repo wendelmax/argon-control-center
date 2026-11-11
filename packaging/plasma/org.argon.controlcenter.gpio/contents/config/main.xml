@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="style" type="String">
+      <label>map (40-pin header) or list (chosen pins)</label>
+      <default>map</default>
+    </entry>
+    <entry name="pins" type="String">
+      <label>GPIO numbers (BCM) for the list and the panel, separated by commas</label>
+      <default>17,27,22</default>
+    </entry>
+    <entry name="allowControl" type="Bool">
+      <label>Clicking an output pin toggles it</label>
+      <default>false</default>
+    </entry>
+  </group>
+</kcfg>

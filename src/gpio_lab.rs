@@ -79,6 +79,171 @@ pub struct PhysicalPinDef {
     pub kind: HeaderPinKind,
 }
 
+impl PhysicalPinDef {
+    /// Alternate-function name from the label, e.g. "SDA1 I2C" in "GPIO 2 (SDA1 I2C)".
+    pub fn function(&self) -> &'static str {
+        let label = self.label;
+        match (label.find('('), label.rfind(')')) {
+            (Some(a), Some(b)) if b > a => &label[a + 1..b],
+            _ => "",
+        }
+    }
+}
+
+/// Header pin of a BCM GPIO number.
+pub fn header_pin(bcm: u8) -> Option<&'static PhysicalPinDef> {
+    RPI_40PIN_HEADER
+        .iter()
+        .find(|d| d.kind == HeaderPinKind::Gpio(bcm))
+}
+
+/// Live state of one GPIO for `--json` and the desktop widget.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GpioPinSnapshot {
+    pub bcm: u8,
+    /// Physical header pin.
+    pub pin: u8,
+    /// Alternate function from the header map ("SDA1 I2C"), empty for plain GPIO.
+    pub function: &'static str,
+    /// IN, OUT, ALT0..ALT5.
+    pub mode: &'static str,
+    /// up, down or none.
+    pub pull: &'static str,
+    pub high: bool,
+}
+
+/// Written once per second by argon-control-center-gpio.service on kernels without /dev/gpiomem.
+pub const GPIO_FEED: &str = "/run/argon-control-center/pinctrl.txt";
+const GPIO_FEED_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Where the GPIO states came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GpioSource {
+    /// `pinctrl` run by the current user: live, and pins can be driven without a password.
+    Pinctrl,
+    /// The read-only state service: levels are about one second old, driving needs Polkit.
+    Service,
+}
+
+/// `pinctrl get 0-27` output: run directly, or read from the state service when pinctrl is not
+/// permitted (no /dev/gpiomem). None when neither is available.
+pub fn pinctrl_states() -> Option<(String, GpioSource)> {
+    if let Ok(out) = Command::new("pinctrl").args(["get", "0-27"]).output() {
+        if out.status.success() && !out.stdout.is_empty() {
+            return Some((
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                GpioSource::Pinctrl,
+            ));
+        }
+    }
+    let age = fs::metadata(GPIO_FEED)
+        .ok()?
+        .modified()
+        .ok()?
+        .elapsed()
+        .unwrap_or_default();
+    if age > GPIO_FEED_MAX_AGE {
+        return None;
+    }
+    let text = fs::read_to_string(GPIO_FEED).ok()?;
+    (!text.trim().is_empty()).then_some((text, GpioSource::Service))
+}
+
+/// GPIO 0-27 for `--json` and the desktop widget.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GpioState {
+    pub source: GpioSource,
+    /// True when `--gpio` can drive output pins without a password.
+    pub writable: bool,
+    pub pins: Vec<GpioPinSnapshot>,
+}
+
+/// Reads GPIO 0-27. None when pinctrl is missing or not permitted and the state service is
+/// not running.
+pub fn read_gpio_state() -> Option<GpioState> {
+    let (text, source) = pinctrl_states()?;
+    Some(GpioState {
+        source,
+        writable: source == GpioSource::Pinctrl,
+        pins: pins_from_pinctrl(&text)?,
+    })
+}
+
+fn pins_from_pinctrl(text: &str) -> Option<Vec<GpioPinSnapshot>> {
+    let parsed = parse_pinctrl_output(text);
+    if parsed.is_empty() {
+        return None;
+    }
+    Some(
+        parsed
+            .into_iter()
+            .map(|(bcm, dir, pull, high)| GpioPinSnapshot {
+                bcm,
+                pin: header_pin(bcm).map(|d| d.phys_num).unwrap_or(0),
+                function: header_pin(bcm).map(|d| d.function()).unwrap_or(""),
+                mode: dir.short_label(),
+                pull: match pull {
+                    PinPull::Up => "up",
+                    PinPull::Down => "down",
+                    PinPull::None => "none",
+                },
+                high,
+            })
+            .collect(),
+    )
+}
+
+/// `--gpio <bcm>=<0|1>`: drives an output pin. Inputs and pins used by an alternate function
+/// are refused, and no password is asked (the user needs the gpio group).
+pub fn drive_output_cli(arg: &str) -> Result<String, String> {
+    const USAGE: &str = "usage: --gpio <bcm>=<0|1>, for example --gpio 17=1";
+    let (pin, value) = arg.split_once('=').ok_or(USAGE)?;
+    let bcm: u8 = pin
+        .trim()
+        .trim_start_matches("GPIO")
+        .trim_start_matches("gpio")
+        .parse()
+        .map_err(|_| USAGE.to_string())?;
+    if bcm > 27 {
+        return Err(format!("GPIO{bcm} is not on the 40-pin header (0-27)"));
+    }
+    let high = match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "high" | "on" => true,
+        "0" | "low" | "off" => false,
+        _ => return Err(USAGE.to_string()),
+    };
+    let gpio = read_gpio_state().ok_or(
+        "cannot read the GPIO state with pinctrl; add your user to the gpio group and log in again",
+    )?;
+    if !gpio.writable {
+        return Err("this kernel has no /dev/gpiomem, so only root can drive pins; use the GPIO Lab, which asks for the password".to_string());
+    }
+    let pins = gpio.pins;
+    let state = pins
+        .iter()
+        .find(|p| p.bcm == bcm)
+        .ok_or_else(|| format!("GPIO{bcm} was not reported by pinctrl"))?;
+    if state.mode != "OUT" {
+        return Err(format!(
+            "GPIO{bcm} is {}; only output pins can be driven from here. Set it as an output in the GPIO Lab first.",
+            state.mode
+        ));
+    }
+    let level = if high { "dh" } else { "dl" };
+    let out = Command::new("pinctrl")
+        .args(["set", &bcm.to_string(), level])
+        .output()
+        .map_err(|e| format!("pinctrl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "pinctrl set {bcm} {level} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("GPIO{bcm} {}", if high { "HIGH" } else { "LOW" }))
+}
+
 /// Standard 40-pin Raspberry Pi physical header definition (Pins 1..40).
 pub const RPI_40PIN_HEADER: [PhysicalPinDef; 40] = [
     PhysicalPinDef {
@@ -341,6 +506,8 @@ pub struct GpioSerialLabState {
     pub watched_bcm: Vec<u8>,
     pub selected_bcm: u8,
     pub hw_access_unlocked: bool,
+    /// Where the live GPIO states come from; None when they are not available.
+    pub gpio_source: Option<GpioSource>,
     pub simulate_pulses: bool,
     pub sim_tick: u64,
 
@@ -474,6 +641,7 @@ impl GpioSerialLabState {
             watched_bcm: vec![2, 3, 4, 23],
             selected_bcm: 4,
             hw_access_unlocked: false,
+            gpio_source: None,
             simulate_pulses: false,
             sim_tick: 0,
             log_edges: true,
@@ -543,8 +711,9 @@ impl GpioSerialLabState {
             run_root_script(&format!("/bin/sh {packaged} {user_q}"))?
         } else {
             let rules = crate::privileged::shell_quote(SETUP_RULES);
+            let unit = crate::privileged::shell_quote(SETUP_GPIO_UNIT);
             crate::privileged::run_root_script_with_stdin(
-                &format!("ARGONCC_RULES={rules} /bin/sh -s -- {user_q}"),
+                &format!("ARGONCC_RULES={rules} ARGONCC_GPIO_UNIT={unit} /bin/sh -s -- {user_q}"),
                 Some(SETUP_SCRIPT.as_bytes()),
             )?
         };
@@ -558,14 +727,12 @@ impl GpioSerialLabState {
     pub fn poll_gpio_states(&mut self) {
         self.sim_tick = self.sim_tick.wrapping_add(1);
 
-        // Try reading real hardware from `pinctrl get 0-27`
-        if let Ok(out) = Command::new("/usr/bin/pinctrl")
-            .args(["get", "0-27"])
-            .output()
-        {
-            if out.status.success() {
-                self.hw_access_unlocked = true;
-                let stdout = String::from_utf8_lossy(&out.stdout);
+        // Real hardware: `pinctrl get 0-27`, or the read-only state service.
+        let states = pinctrl_states();
+        self.gpio_source = states.as_ref().map(|(_, source)| *source);
+        self.hw_access_unlocked = self.gpio_source == Some(GpioSource::Pinctrl);
+        if let Some((stdout, _)) = states {
+            {
                 let parsed = parse_pinctrl_output(&stdout);
                 let mut edge_events = Vec::new();
 
@@ -1090,6 +1257,7 @@ fn open_nonblocking_serial(path: &str, baud: u32) -> Result<fs::File, String> {
 
 const SETUP_SCRIPT: &str = include_str!("../packaging/common/setup-permissions.sh");
 const SETUP_RULES: &str = include_str!("../packaging/common/60-argon-control-center.rules");
+const SETUP_GPIO_UNIT: &str = include_str!("../packaging/common/argon-control-center-gpio.service");
 
 /// Login name of the real user running the app (from the passwd database, not `$USER`).
 fn current_username() -> Option<String> {

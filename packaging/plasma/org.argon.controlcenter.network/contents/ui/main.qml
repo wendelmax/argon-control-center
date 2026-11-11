@@ -84,7 +84,7 @@ PlasmoidItem {
             visible: root.style !== "gauges"
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
-            icon.name: "utilities-system-monitor"
+            icon.name: "argon-control-center"
             onClicked: data.openApp()
         }
     }

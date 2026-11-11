@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.gpio",
+        "Name": "Argon GPIO",
+        "Name[pt_BR]": "Argon GPIO",
+        "Description": "Live levels of the 40-pin header: header map or a list of chosen pins.",
+        "Description[pt_BR]": "Níveis ao vivo do conector de 40 pinos: mapa do conector ou lista de pinos escolhidos.",
+        "Icon": "network-wired",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.3.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

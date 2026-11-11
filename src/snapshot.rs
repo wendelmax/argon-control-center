@@ -34,6 +34,8 @@ pub struct Snapshot {
     pub daemon_active: bool,
     /// False when the Argon fan controller's I2C bus is missing (fan not controlled).
     pub fan_bus: bool,
+    /// GPIO 0-27 from pinctrl; null without access to the pins.
+    pub gpio: Option<crate::gpio_lab::GpioState>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -351,6 +353,7 @@ pub fn take() -> Snapshot {
         },
         daemon_active,
         fan_bus: crate::argon::fan_bus_available() || !crate::argon::fan_bus_expected(),
+        gpio: crate::gpio_lab::read_gpio_state(),
     };
 
     let cache = Cache {

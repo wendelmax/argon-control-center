@@ -8,6 +8,7 @@
 # - loads i2c-dev now and at every boot
 # - reloads udev so /dev/i2c-* and /dev/gpiochip* get the new group/mode
 # - removes setuid bits that very old versions of this app set on GPIO/I2C tools
+# - enables the read-only GPIO state service when the kernel has no /dev/gpiomem
 # - adds USER to i2c, gpio, video (firmware mailbox for vcgencmd) and the serial group
 #   (dialout on Debian/Fedora, uucp on Arch)
 # - prints which optional tools and hardware interfaces are available
@@ -61,6 +62,26 @@ if command -v udevadm >/dev/null 2>&1; then
     udevadm trigger --subsystem-match=i2c-dev --subsystem-match=gpio --action=change || true
     udevadm trigger --sysname-match='gpiomem*' --action=change 2>/dev/null || true
     udevadm trigger --sysname-match=vcio --action=change 2>/dev/null || true
+fi
+
+# Read-only GPIO state service: without /dev/gpiomem only root can run pinctrl.
+GPIO_UNIT=argon-control-center-gpio.service
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    if [ ! -f "/usr/lib/systemd/system/$GPIO_UNIT" ] && [ ! -f "/lib/systemd/system/$GPIO_UNIT" ]; then
+        if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/$GPIO_UNIT" ]; then
+            install -Dm644 "$SELF_DIR/$GPIO_UNIT" "/etc/systemd/system/$GPIO_UNIT"
+        elif [ -n "${ARGONCC_GPIO_UNIT:-}" ]; then
+            mkdir -p /etc/systemd/system
+            printf '%s\n' "$ARGONCC_GPIO_UNIT" > "/etc/systemd/system/$GPIO_UNIT"
+            chmod 644 "/etc/systemd/system/$GPIO_UNIT"
+        fi
+    fi
+    systemctl daemon-reload 2>/dev/null || true
+    if [ ! -e /dev/gpiomem ] && [ -e /dev/gpiochip0 ] && command -v pinctrl >/dev/null 2>&1; then
+        if systemctl enable --now "$GPIO_UNIT" >/dev/null 2>&1; then
+            echo "GPIO state service enabled (this kernel has no /dev/gpiomem)."
+        fi
+    fi
 fi
 
 if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ] && id "$TARGET_USER" >/dev/null 2>&1; then

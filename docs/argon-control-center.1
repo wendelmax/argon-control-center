@@ -65,6 +65,17 @@ Report which hardware interfaces and tools the current user can use (I2C, GPIO,
 firmware mailbox, GPU statistics, power sensor, trial boot, Polkit, I2C and GPIO
 tools) and how to enable the missing ones.
 .TP
+.BI \-\-gpio " bcm" = level
+Drive a GPIO that is already an output, for example
+.BR "\-\-gpio 17=1" .
+Inputs and pins used by an alternate function (I2C, UART) are refused. It needs
+.B pinctrl
+without a password, which requires
+.I /dev/gpiomem
+and membership of the
+.B gpio
+group.
+.TP
 .BI \-\-stress " seconds"
 Load every CPU core for the given time while recording temperature, clock and
 the 5\ V supply, then print a verdict. Exits with status 1 when the result is not
@@ -91,7 +102,7 @@ Use the graphical interface to change settings.
 On KDE Plasma 6, the
 .B Add Widgets
 dialog lists the Argon widgets (CPU, Thermal, GPU, Memory, Network, Storage,
-Power and System). They read
+Power, System and GPIO). They read
 .B argon-control-center \-\-json
 every two seconds.
 .SH FILES
@@ -109,6 +120,14 @@ The previous file is kept as
 .TP
 .I /boot/firmware/tryboot.txt
 Overclock under trial, used for a single boot.
+.TP
+.I /run/argon-control-center/pinctrl.txt
+GPIO states written once per second by
+.BR argon-control-center-gpio.service ,
+which the packages enable on kernels without
+.IR /dev/gpiomem ,
+where only root can run
+.BR pinctrl .
 .TP
 .IR /etc/argononed.conf ", " /etc/argononed\-hdd.conf
 Fan curves.

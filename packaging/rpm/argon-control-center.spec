@@ -49,6 +49,9 @@ sh packaging/common/install-tree.sh %{buildroot} target/release/%{name}
 %post
 /usr/lib/argon-control-center/setup-permissions.sh "${SUDO_USER:-}" || :
 
+%preun
+%systemd_preun argon-control-center-gpio.service
+
 %postun
 udevadm control --reload-rules >/dev/null 2>&1 || :
 
@@ -61,6 +64,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_metainfodir}/io.github.wendelmax.argon_control_center.metainfo.xml
 %{_udevrulesdir}/60-argon-control-center.rules
+%{_unitdir}/argon-control-center-gpio.service
 %{_sysusersdir}/argon-control-center.conf
 %{_modulesloaddir}/argon-control-center.conf
 %dir %{_prefix}/lib/argon-control-center

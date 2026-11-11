@@ -19,6 +19,8 @@ Item {
         return out
     }
     function openApp() { launcher.connectSource(cmd + " --gui >/dev/null 2>&1 &") }
+    // Runs the CLI with fixed arguments built by the widget (numbers only, never user text).
+    function run(args) { launcher.connectSource(cmd + " " + args + " >/dev/null 2>&1") }
     function uptime(s) {
         var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
         return (d > 0 ? d + "d " : "") + h + "h " + m + "m"

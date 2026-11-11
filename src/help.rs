@@ -77,7 +77,7 @@ static EN: [Section; 11] = [
     ),
     s(
         "Desktop widgets (KDE Plasma)",
-        "Right-click the desktop or a panel, choose Add Widgets and search for Argon. Eight widgets are available: CPU, Thermal, GPU, Memory, Network, Storage, Power and System.\n\n\
+        "Right-click the desktop or a panel, choose Add Widgets and search for Argon. Nine widgets are available: CPU, Thermal, GPU, Memory, Network, Storage, Power, System and GPIO.\n\n\
          In a widget's Configure dialog, choose the style: bars, gauges (transparent background, sized to the widget) or a chart of the last two minutes. In a panel the widgets show a compact value.",
         None,
     ),
@@ -156,7 +156,7 @@ static PT: [Section; 11] = [
     ),
     s(
         "Widgets da área de trabalho (KDE Plasma)",
-        "Clique com o botão direito na área de trabalho ou em um painel, escolha Adicionar widgets e busque por Argon. São oito widgets: CPU, Térmico, GPU, Memória, Rede, Armazenamento, Energia e Sistema.\n\n\
+        "Clique com o botão direito na área de trabalho ou em um painel, escolha Adicionar widgets e busque por Argon. São nove widgets: CPU, Térmico, GPU, Memória, Rede, Armazenamento, Energia, Sistema e GPIO.\n\n\
          Em Configurar de cada widget, escolha o estilo: barras, medidores (fundo transparente, ajustados ao tamanho do widget) ou gráfico dos últimos dois minutos. No painel os widgets mostram um valor compacto.",
         None,
     ),
