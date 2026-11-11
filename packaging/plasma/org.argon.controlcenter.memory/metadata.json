@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Id": "org.argon.controlcenter.memory",
+        "Name": "Argon Memory",
+        "Name[pt_BR]": "Argon Memória",
+        "Description": "RAM and swap usage.",
+        "Description[pt_BR]": "Uso de RAM e swap.",
+        "Icon": "media-flash",
+        "Authors": [
+            {
+                "Name": "wendelmax"
+            }
+        ],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "0.2.0",
+        "Website": "https://github.com/wendelmax/argon-control-center"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

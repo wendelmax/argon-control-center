@@ -37,11 +37,7 @@ chmod 644 "$APP_DIR/$BIN_NAME.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
 
 # Plasma 6 desktop widgets (Add Widgets > "Argon")
-for widget in packaging/plasma/org.argon.controlcenter.*; do
-    rm -rf "$WIDGET_DIR/$(basename "$widget")"
-    mkdir -p "$WIDGET_DIR"
-    cp -r "$widget" "$WIDGET_DIR/"
-done
+sh packaging/plasma/stage.sh "$WIDGET_DIR"
 
 echo "Installed: $BIN_DIR/$BIN_NAME"
 echo "Plasma widgets: $WIDGET_DIR (Add Widgets > Argon)"

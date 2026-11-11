@@ -3,85 +3,97 @@ import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents
-import org.kde.plasma.plasma5support as P5Support
 import org.kde.kirigami as Kirigami
 
 PlasmoidItem {
     id: root
-    property var snap: null
-    readonly property bool ready: snap !== null
-    // Per-user installs live in ~/.local/bin, which is often not in plasmashell's PATH.
-    readonly property string cmd: "PATH=\"$PATH:$HOME/.local/bin\" argon-control-center"
+    readonly property var s: data.snap
+    readonly property bool ready: data.ready
+    readonly property string style: Plasmoid.configuration.style !== undefined ? Plasmoid.configuration.style : "bars"
+    readonly property var palette: ["#3daee9", "#27ae60", "#f67400", "#9b59b6", "#da4453", "#1abc9c", "#f39c12", "#95a5a6"]
 
-    // Reads `argon-control-center --json` every 2 s.
-    P5Support.DataSource {
-        engine: "executable"
-        connectedSources: [root.cmd + " --json"]
-        interval: 2000
-        onNewData: (source, data) => {
-            try { root.snap = JSON.parse(data["stdout"]) } catch (e) { root.snap = null }
-        }
-    }
-    // Opens the application.
-    P5Support.DataSource {
-        id: launcher
-        engine: "executable"
-        onNewData: (source) => disconnectSource(source)
-    }
-    function openApp() {
-        launcher.connectSource(root.cmd + " --gui >/dev/null 2>&1 &")
-    }
-    function pct(v) { return (v === null || v === undefined) ? "—" : Math.round(v) + "%" }
+    ArgonData { id: data; onUpdated: root.record() }
 
-    toolTipMainText: "Argon Control Center"
-    toolTipSubText: ready ? snap.board : "argon-control-center --json"
+    toolTipMainText: "Argon GPU"
+    toolTipSubText: ready ? s.board : "argon-control-center --json"
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
+    property var hRender: []
+    function record() {
+        hRender = data.push(hRender, s.gpu.render !== null ? s.gpu.render : 0)
+    }
 
     compactRepresentation: MouseArea {
-        Layout.minimumWidth: label.implicitWidth + Kirigami.Units.smallSpacing * 2
+        Layout.minimumWidth: compactLabel.implicitWidth + Kirigami.Units.smallSpacing * 2
         onClicked: root.expanded = !root.expanded
         PlasmaComponents.Label {
-            id: label
+            id: compactLabel
             anchors.centerIn: parent
-            text: root.ready && root.snap.gpu.render !== null ? "GPU " + root.pct(root.snap.gpu.render) : "GPU —"
+            text: root.ready && root.s.gpu.render !== null ? "GPU " + data.pct(root.s.gpu.render) : "GPU —"
         }
     }
 
     fullRepresentation: ColumnLayout {
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 14
         Layout.preferredWidth: Kirigami.Units.gridUnit * 18
         spacing: Kirigami.Units.smallSpacing
         Kirigami.Heading { level: 4; text: "GPU" }
-        Meter {
+        ColumnLayout {
+            visible: root.style === "bars" || root.style === ""
             Layout.fillWidth: true
-            label: "render"
-            visible: root.ready && root.snap.gpu.render !== null
-            fraction: visible ? root.snap.gpu.render / 100 : 0
-            value: visible ? root.pct(root.snap.gpu.render) : ""
+            Meter {
+                Layout.fillWidth: true
+                visible: root.ready && root.s.gpu.render !== null
+                label: "render"
+                fraction: root.ready && root.s.gpu.render !== null ? root.s.gpu.render / 100 : 0
+                value: root.ready ? data.pct(root.s.gpu.render) : "—"
+            }
+            Meter {
+                Layout.fillWidth: true
+                visible: root.ready && root.s.gpu.bin !== null
+                label: "geom"
+                fraction: root.ready && root.s.gpu.bin !== null ? root.s.gpu.bin / 100 : 0
+                value: root.ready ? data.pct(root.s.gpu.bin) : "—"
+            }
+            Meter {
+                Layout.fillWidth: true
+                visible: root.ready && root.s.gpu.cma_total_mb !== null
+                label: "CMA"
+                fraction: root.ready && root.s.gpu.cma_total_mb ? root.s.gpu.cma_used_mb / root.s.gpu.cma_total_mb : 0
+                value: root.ready && root.s.gpu.cma_total_mb ? root.s.gpu.cma_used_mb + "/" + root.s.gpu.cma_total_mb + "M" : ""
+            }
         }
-        Meter {
+        Flow {
+            visible: root.style === "gauges"
             Layout.fillWidth: true
-            label: "geom"
-            visible: root.ready && root.snap.gpu.bin !== null
-            fraction: visible ? root.snap.gpu.bin / 100 : 0
-            value: visible ? root.pct(root.snap.gpu.bin) : ""
+            spacing: Kirigami.Units.smallSpacing
+            Gauge {
+                visible: root.ready && root.s.gpu.render !== null
+                label: "render"
+                fraction: root.ready && root.s.gpu.render !== null ? root.s.gpu.render / 100 : 0
+                value: root.ready ? Math.round(root.s.gpu.render || 0) : "—"
+                unit: "%"
+            }
+            Gauge {
+                visible: root.ready && root.s.gpu.cma_total_mb !== null
+                label: "CMA"
+                fraction: root.ready && root.s.gpu.cma_total_mb ? root.s.gpu.cma_used_mb / root.s.gpu.cma_total_mb : 0
+                value: root.ready && root.s.gpu.cma_total_mb ? Math.round(100 * root.s.gpu.cma_used_mb / root.s.gpu.cma_total_mb) : "—"
+                unit: "%"
+            }
         }
-        Meter {
-            Layout.fillWidth: true
-            label: "CMA"
-            visible: root.ready && root.snap.gpu.cma_total_mb !== null
-            fraction: visible ? root.snap.gpu.cma_used_mb / root.snap.gpu.cma_total_mb : 0
-            value: visible ? root.snap.gpu.cma_used_mb + "/" + root.snap.gpu.cma_total_mb + "M" : ""
+        Spark {
+            visible: root.style === "chart"
+            series: [{ values: root.hRender, color: "#27ae60", max: 100 }]
         }
         PlasmaComponents.Label {
-            text: root.ready && root.snap.gpu.v3d_mhz !== null ? "v3d " + root.snap.gpu.v3d_mhz + " MHz" : ""
+            text: root.ready && root.s.gpu.v3d_mhz !== null ? "v3d " + root.s.gpu.v3d_mhz + " MHz" : ""
             opacity: 0.7
         }
-        PlasmaComponents.Button {
+        PlasmaComponents.ToolButton {
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
             icon.name: "utilities-system-monitor"
-            onClicked: root.openApp()
+            onClicked: data.openApp()
         }
     }
 }

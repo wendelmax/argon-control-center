@@ -3,8 +3,8 @@
         "Id": "org.argon.controlcenter.cpu",
         "Name": "Argon CPU",
         "Name[pt_BR]": "Argon CPU",
-        "Description": "CPU load per core, clock and governor of the Raspberry Pi.",
-        "Description[pt_BR]": "Carga da CPU por núcleo, clock e governor do Raspberry Pi.",
+        "Description": "CPU load per core, clock and governor.",
+        "Description[pt_BR]": "Carga da CPU por núcleo, clock e governor.",
         "Icon": "cpu",
         "Authors": [
             {
