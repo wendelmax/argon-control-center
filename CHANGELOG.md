@@ -8,6 +8,9 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+### Changed
+- Packages and CI target only 64-bit ARM, the Raspberry Pi architecture: `.deb` (arm64), `.rpm` (aarch64) and a new Arch Linux ARM package (aarch64). The x86_64 packages are no longer published.
+
 ## [0.2.0] - 2026-11-11
 
 ### Added
@@ -54,7 +57,7 @@ First public release.
 - Short labels on buttons, cards and options; file paths, `config.txt` keys and explanations are shown in tooltips.
 - English interface by default, with Brazilian Portuguese available in Settings or with `--pt`.
 - Preferences (appearance, language, temperature unit, scale and last page) are remembered between sessions. The temperature unit shown in the app is independent of the case OLED setting.
-- Packages for Debian and Ubuntu (`.deb`, amd64 and arm64), Fedora (`.rpm`, x86_64 and aarch64) and Arch Linux (`.pkg.tar.zst` and `PKGBUILD`).
+- Packages for 64-bit Raspberry Pi systems: Debian and Ubuntu (`.deb`, arm64), Fedora (`.rpm`, aarch64) and a `PKGBUILD` for Arch Linux ARM.
 - Packages install udev rules, the `i2c` and `gpio` groups and load `i2c-dev` at boot, so hardware access works without running the application as root.
 - `--status` command-line report with the detected hardware and the current overclock.
 - `scripts/bump-version.sh` for MAJOR.MINOR.PATCH version bumps and release tags; version tags publish a GitHub Release automatically.
