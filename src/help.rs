@@ -60,8 +60,9 @@ static EN: [Section; 11] = [
     ),
     s(
         "GPIO Lab",
-        "The 40-pin diagram shows the live level of every GPIO; click a pin to inspect it and drive it high or low. The list view shows the same pins as text.\n\n\
-         The console talks to serial ports (UART, USB adapters) and has I2C commands: type help to list them. Use Unlock hardware once to give your user access to GPIO and I2C.",
+        "The toolbar shows whether GPIO, the I2C bus and the serial port are available, with a search box: 17 selects GPIO 17, p11 physical pin 11, and text such as SDA matches pin names.\n\n\
+         Pinout shows the 40-pin header as a diagram or a table with mode, pull, level and edge counts. The inspector controls the selected pin (mode, pull, drive LOW or HIGH) and lists the equivalent pinctrl, gpioget/gpioset and Python commands, ready to copy.\n\n\
+         The bottom panel has four tabs: Analyzer (up to four live traces), Serial (UART and USB adapters), I2C (bus scan and Argon MCU registers) and Log, which also accepts commands: type help to list them. Use Unlock hardware once to give your user access to GPIO and I2C.",
         Some(ActiveTab::GpioLab),
     ),
     s(
@@ -138,8 +139,9 @@ static PT: [Section; 11] = [
     ),
     s(
         "GPIO Lab",
-        "O diagrama de 40 pinos mostra o nível de cada GPIO ao vivo; clique em um pino para inspecioná-lo e colocá-lo em HIGH ou LOW. A visão em lista mostra os mesmos pinos em texto.\n\n\
-         O console fala com portas seriais (UART, adaptadores USB) e tem comandos de I2C: digite help para listá-los. Use Liberar hardware uma vez para dar ao seu usuário acesso a GPIO e I2C.",
+        "A barra de ferramentas mostra se GPIO, o barramento I2C e a porta serial estão disponíveis, com uma busca: 17 seleciona o GPIO 17, p11 o pino físico 11, e texto como SDA busca pelo nome do pino.\n\n\
+         Pinagem mostra o conector de 40 pinos como diagrama ou tabela com modo, pull, nível e bordas. O inspetor controla o pino selecionado (modo, pull, acionar LOW ou HIGH) e lista os comandos equivalentes de pinctrl, gpioget/gpioset e Python, prontos para copiar.\n\n\
+         O painel inferior tem quatro abas: Analisador (até quatro traços ao vivo), Serial (UART e adaptadores USB), I2C (varredura do barramento e registradores do MCU Argon) e Log, que também aceita comandos: digite help para listá-los. Use Liberar hardware uma vez para dar ao seu usuário acesso a GPIO e I2C.",
         Some(ActiveTab::GpioLab),
     ),
     s(
