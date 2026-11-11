@@ -16,6 +16,8 @@ PlasmoidItem {
 
     toolTipMainText: "Argon CPU"
     toolTipSubText: ready ? s.board : "argon-control-center --json"
+    // Gauges float on the desktop without the widget frame.
+    Plasmoid.backgroundHints: root.style === "gauges" ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     property var hTotal: []
     property var hCores: []
@@ -40,7 +42,17 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
         Layout.preferredWidth: Kirigami.Units.gridUnit * 18
         spacing: Kirigami.Units.smallSpacing
-        Kirigami.Heading { level: 4; text: "CPU" }
+        Kirigami.Heading { level: 4; visible: root.style !== "gauges"; text: "CPU" }
+        GaugeGrid {
+            visible: root.style === "gauges"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: Kirigami.Units.gridUnit * 4
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            items: (root.ready ? [{ label: "total", fraction: root.s.cpu.total / 100, value: Math.round(root.s.cpu.total), unit: "%" }]
+                .concat(root.s.cpu.cores.map(function (v, i) { return { label: "cpu" + i, fraction: v / 100, value: Math.round(v), unit: "%" } })) : [])
+            onActivated: data.openApp()
+        }
         ColumnLayout {
             visible: root.style === "bars" || root.style === ""
             Layout.fillWidth: true
@@ -65,33 +77,6 @@ PlasmoidItem {
                 }
             }
         }
-        Flow {
-            visible: root.style === "gauges"
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            Gauge {
-                visible: true
-                label: "total"
-                fraction: root.ready ? root.s.cpu.total / 100 : 0
-                value: root.ready ? Math.round(root.s.cpu.total) : "—"
-                unit: "%"
-            }
-        }
-        Flow {
-            visible: root.style === "gauges"
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            Repeater {
-                model: root.ready ? root.s.cpu.cores : []
-                Gauge {
-                    size: Kirigami.Units.gridUnit * 3.6
-                    label: "cpu" + index
-                    fraction: modelData / 100
-                    value: Math.round(modelData)
-                    unit: "%"
-                }
-            }
-        }
         Spark {
             visible: root.style === "chart"
             series: [{ values: root.hTotal, color: Kirigami.Theme.textColor, max: 100 }].concat(root.hCores.map(function (h, i) { return { values: h, color: root.palette[i % root.palette.length], max: 100 } }))
@@ -101,6 +86,7 @@ PlasmoidItem {
             opacity: 0.7
         }
         PlasmaComponents.ToolButton {
+            visible: root.style !== "gauges"
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
             icon.name: "utilities-system-monitor"

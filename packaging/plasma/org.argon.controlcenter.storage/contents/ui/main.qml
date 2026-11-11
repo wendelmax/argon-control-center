@@ -16,6 +16,8 @@ PlasmoidItem {
 
     toolTipMainText: "Argon Storage"
     toolTipSubText: ready ? s.board : "argon-control-center --json"
+    // Gauges float on the desktop without the widget frame.
+    Plasmoid.backgroundHints: root.style === "gauges" ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     function record() {}
 
@@ -33,7 +35,17 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
         Layout.preferredWidth: Kirigami.Units.gridUnit * 18
         spacing: Kirigami.Units.smallSpacing
-        Kirigami.Heading { level: 4; text: "Storage" }
+        Kirigami.Heading { level: 4; visible: root.style !== "gauges"; text: "Storage" }
+        GaugeGrid {
+            visible: root.style === "gauges"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: Kirigami.Units.gridUnit * 4
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            items: (root.ready ? root.s.disks.map(function (d) {
+                return { label: d.mount_point === "/" ? "/" : d.mount_point.split("/").pop(), fraction: d.usage_pct / 100, value: Math.round(d.usage_pct), unit: "%" } }) : [])
+            onActivated: data.openApp()
+        }
         ColumnLayout {
             visible: root.style !== "gauges"
             Layout.fillWidth: true
@@ -47,22 +59,8 @@ PlasmoidItem {
                 }
             }
         }
-        Flow {
-            visible: root.style === "gauges"
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            Repeater {
-                model: root.ready ? root.s.disks : []
-                Gauge {
-                    size: Kirigami.Units.gridUnit * 3.6
-                    label: modelData.mount_point === "/" ? "/" : modelData.mount_point.split("/").pop()
-                    fraction: modelData.usage_pct / 100
-                    value: Math.round(modelData.usage_pct)
-                    unit: "%"
-                }
-            }
-        }
         PlasmaComponents.ToolButton {
+            visible: root.style !== "gauges"
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
             icon.name: "utilities-system-monitor"

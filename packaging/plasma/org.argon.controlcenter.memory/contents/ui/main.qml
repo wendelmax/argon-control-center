@@ -16,6 +16,8 @@ PlasmoidItem {
 
     toolTipMainText: "Argon Memory"
     toolTipSubText: ready ? s.board : "argon-control-center --json"
+    // Gauges float on the desktop without the widget frame.
+    Plasmoid.backgroundHints: root.style === "gauges" ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     property var hMem: []
     property var hSwap: []
@@ -38,7 +40,18 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
         Layout.preferredWidth: Kirigami.Units.gridUnit * 18
         spacing: Kirigami.Units.smallSpacing
-        Kirigami.Heading { level: 4; text: "Memory" }
+        Kirigami.Heading { level: 4; visible: root.style !== "gauges"; text: "Memory" }
+        GaugeGrid {
+            visible: root.style === "gauges"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: Kirigami.Units.gridUnit * 4
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            items: (root.ready ? [
+                { label: "mem", fraction: root.s.mem.pct / 100, value: Math.round(root.s.mem.pct), unit: "%" },
+                { label: "swap", fraction: root.s.swap.pct / 100, value: Math.round(root.s.swap.pct), unit: "%" }] : [])
+            onActivated: data.openApp()
+        }
         ColumnLayout {
             visible: root.style === "bars" || root.style === ""
             Layout.fillWidth: true
@@ -57,30 +70,12 @@ PlasmoidItem {
                 value: root.ready ? root.s.swap.used_mb + "/" + root.s.swap.total_mb + "M" : "—"
             }
         }
-        Flow {
-            visible: root.style === "gauges"
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            Gauge {
-                visible: true
-                label: "mem"
-                fraction: root.ready ? root.s.mem.pct / 100 : 0
-                value: root.ready ? Math.round(root.s.mem.pct) : "—"
-                unit: "%"
-            }
-            Gauge {
-                visible: true
-                label: "swap"
-                fraction: root.ready ? root.s.swap.pct / 100 : 0
-                value: root.ready ? Math.round(root.s.swap.pct) : "—"
-                unit: "%"
-            }
-        }
         Spark {
             visible: root.style === "chart"
             series: [{ values: root.hMem, color: "#9b59b6", max: 100 }, { values: root.hSwap, color: "#f39c12", max: 100 }]
         }
         PlasmaComponents.ToolButton {
+            visible: root.style !== "gauges"
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
             icon.name: "utilities-system-monitor"

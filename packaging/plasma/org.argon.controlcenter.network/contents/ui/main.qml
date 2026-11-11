@@ -16,6 +16,8 @@ PlasmoidItem {
 
     toolTipMainText: "Argon Network"
     toolTipSubText: ready ? s.board : "argon-control-center --json"
+    // Gauges float on the desktop without the widget frame.
+    Plasmoid.backgroundHints: root.style === "gauges" ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     property var hRx: []
     property var hTx: []
@@ -40,7 +42,18 @@ PlasmoidItem {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 14
         Layout.preferredWidth: Kirigami.Units.gridUnit * 18
         spacing: Kirigami.Units.smallSpacing
-        Kirigami.Heading { level: 4; text: "Network" }
+        Kirigami.Heading { level: 4; visible: root.style !== "gauges"; text: "Network" }
+        GaugeGrid {
+            visible: root.style === "gauges"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: Kirigami.Units.gridUnit * 4
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            items: (root.ready ? [
+                { label: "rx", fraction: root.s.net.rx_kbps / root.peak, value: root.s.net.rx_kbps.toFixed(0), unit: "KB/s" },
+                { label: "tx", fraction: root.s.net.tx_kbps / root.peak, value: root.s.net.tx_kbps.toFixed(0), unit: "KB/s" }] : [])
+            onActivated: data.openApp()
+        }
         ColumnLayout {
             visible: root.style === "bars" || root.style === ""
             Layout.fillWidth: true
@@ -59,25 +72,6 @@ PlasmoidItem {
                 value: root.ready ? root.s.net.tx_kbps.toFixed(1) + " KB/s" : "—"
             }
         }
-        Flow {
-            visible: root.style === "gauges"
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            Gauge {
-                visible: true
-                label: "rx"
-                fraction: root.ready ? root.s.net.rx_kbps / root.peak : 0
-                value: root.ready ? root.s.net.rx_kbps.toFixed(0) : "—"
-                unit: "KB/s"
-            }
-            Gauge {
-                visible: true
-                label: "tx"
-                fraction: root.ready ? root.s.net.tx_kbps / root.peak : 0
-                value: root.ready ? root.s.net.tx_kbps.toFixed(0) : "—"
-                unit: "KB/s"
-            }
-        }
         Spark {
             visible: root.style === "chart"
             series: [{ values: root.hRx, color: "#3daee9", max: root.peak }, { values: root.hTx, color: "#27ae60", max: root.peak }]
@@ -87,6 +81,7 @@ PlasmoidItem {
             opacity: 0.7
         }
         PlasmaComponents.ToolButton {
+            visible: root.style !== "gauges"
             Layout.alignment: Qt.AlignRight
             text: "Argon Control Center"
             icon.name: "utilities-system-monitor"

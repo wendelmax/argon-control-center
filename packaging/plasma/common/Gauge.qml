@@ -21,6 +21,7 @@ ColumnLayout {
     PlasmaComponents.Label {
         text: g.label
         font.bold: true
+        font.pixelSize: Math.max(9, g.size * 0.11)
         Layout.alignment: Qt.AlignHCenter
     }
     Item {
@@ -62,6 +63,7 @@ ColumnLayout {
             PlasmaComponents.Label {
                 text: g.unit
                 opacity: 0.7
+                font.pixelSize: Math.max(8, g.size * 0.1)
                 Layout.alignment: Qt.AlignHCenter
             }
         }
