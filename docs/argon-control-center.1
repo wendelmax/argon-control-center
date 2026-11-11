@@ -1,0 +1,152 @@
+.TH ARGON-CONTROL-CENTER 1 "November 2026" "argon-control-center 0.2.0" "User Commands"
+.SH NAME
+argon-control-center \- control center for Raspberry Pi computers in Argon40 cases
+.SH SYNOPSIS
+.B argon-control-center
+.RB [ \-\-gui | \-\-tui ]
+.RB [ \-\-en | \-\-pt ]
+.br
+.B argon-control-center
+.B \-\-status
+|
+.B \-\-json
+|
+.B \-\-doctor
+.br
+.B argon-control-center
+.B \-\-stress
+.I seconds
+.SH DESCRIPTION
+.B argon-control-center
+monitors and configures a Raspberry Pi in an Argon40 case (Argon ONE, ONE V3, EON):
+telemetry, GPU load, the
+.B argononed
+fan curve, board-aware overclocking with a trial boot and a stability test,
+.I config.txt
+hardware options, a GPIO lab and the
+.B argononed
+service.
+.PP
+Without options it opens the graphical interface. When there is no graphical
+session (neither
+.B WAYLAND_DISPLAY
+nor
+.B DISPLAY
+is set) and standard output is a terminal, it opens the terminal interface
+instead, for example over SSH.
+.SH OPTIONS
+.TP
+.B \-\-gui
+Open the graphical interface even when no display is detected.
+.TP
+.B \-\-tui
+Open the terminal interface even inside a graphical session.
+.TP
+.BR \-\-pt ", " \-\-lang=pt
+Use Brazilian Portuguese for the interface.
+.TP
+.BR \-\-en ", " \-\-lang=en
+Use English for the interface.
+.TP
+.BR \-\-status ", " \-s
+Print telemetry, the detected board and case, under-voltage events and the
+current overclock, then exit.
+.TP
+.B \-\-json
+Print a one-line JSON snapshot (CPU per core, clock, temperature, fan target,
+memory, swap, disks, network, GPU load and CMA, firmware throttling flags,
+5\ V alarm,
+.B argononed
+state, system information) and exit. Rates are computed against the previous
+call, so the first call reports zero rates.
+.TP
+.B \-\-doctor
+Report which hardware interfaces and tools the current user can use (I2C, GPIO,
+firmware mailbox, GPU statistics, power sensor, trial boot, Polkit, I2C and GPIO
+tools) and how to enable the missing ones.
+.TP
+.BI \-\-stress " seconds"
+Load every CPU core for the given time while recording temperature, clock and
+the 5\ V supply, then print a verdict. Exits with status 1 when the result is not
+stable (throttling, temperature limit or under-voltage).
+.SH TERMINAL INTERFACE
+The terminal interface is read-only and refreshes every second. It shows the
+.BR cpu ,
+.BR mem ,
+.BR net ,
+.B gpu
+and
+.B argon
+boxes with meters filled from left to right (0 to 100\ %) and a footer with the
+board, system, kernel, uptime and load average.
+.TP
+.BR q ", " Esc
+Quit.
+.TP
+.BR ? ", " h
+Show or hide the help window.
+.PP
+Use the graphical interface to change settings.
+.SH DESKTOP WIDGETS
+On KDE Plasma 6, the
+.B Add Widgets
+dialog lists the Argon widgets (CPU, Thermal, GPU, Memory, Network, Storage,
+Power and System). They read
+.B argon-control-center \-\-json
+every two seconds.
+.SH FILES
+.TP
+.I ~/.config/argon-control-center/settings.json
+Interface preferences.
+.TP
+.I /boot/firmware/config.txt
+Firmware settings; the application manages a block between
+.B # \-\-\- BEGIN ARGON CONTROL CENTER \-\-\-
+and
+.BR "# \-\-\- END ARGON CONTROL CENTER \-\-\-" .
+The previous file is kept as
+.IR config.txt.argoncc.bak .
+.TP
+.I /boot/firmware/tryboot.txt
+Overclock under trial, used for a single boot.
+.TP
+.IR /etc/argononed.conf ", " /etc/argononed\-hdd.conf
+Fan curves.
+.TP
+.I /usr/lib/argon-control-center/setup-permissions.sh
+Creates the
+.BR i2c " and " gpio
+groups, installs the udev rules, loads
+.B i2c\-dev
+at boot and adds a user to the hardware groups.
+.SH EXIT STATUS
+0 on success; 1 when the terminal interface fails to start or
+.B \-\-stress
+finds an unstable system.
+.SH EXAMPLES
+Check what the current user can access:
+.PP
+.RS
+.B argon-control-center \-\-doctor
+.RE
+.PP
+Read the CPU temperature from a script:
+.PP
+.RS
+.B argon-control-center \-\-json | jq .temp_c
+.RE
+.PP
+Three-minute stability test:
+.PP
+.RS
+.B argon-control-center \-\-stress 180
+.RE
+.SH SEE ALSO
+.BR vcgencmd (1),
+.BR systemctl (1),
+.BR config.txt :
+https://www.raspberrypi.com/documentation/computers/config_txt.html
+.PP
+Project page: https://github.com/wendelmax/argon-control-center
+.SH BUGS
+Report issues at https://github.com/wendelmax/argon-control-center/issues

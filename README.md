@@ -27,6 +27,7 @@ Monitor the system, tune the fan curve, overclock safely and manage hardware fea
 - [Installation](#installation)
 - [Usage](#usage)
 - [Safe overclocking](#safe-overclocking)
+- [Terminal interface](#terminal-interface)
 - [Desktop widgets](#desktop-widgets)
 - [Configuration](#configuration)
 - [Permissions](#permissions)
@@ -90,6 +91,9 @@ The board and the Argon case are detected automatically at startup, so presets a
 - Light and dark desktop themes on KDE Plasma, GNOME, Cinnamon, MATE, XFCE and any window manager running xdg-desktop-portal, with enforced text contrast.
 - Interface scaling from 80% to 150%; layouts adapt to narrow windows.
 - Built-in Help page explaining every feature, with links to the related pages.
+
+**Terminal interface**
+- When there is no graphical session (for example over SSH) the application opens a read-only, btop-style terminal interface: cpu, mem, net, gpu and argon boxes with gradient meters and history graphs. See [Terminal interface](#terminal-interface).
 
 **Desktop widgets (KDE Plasma 6)**
 - Eight widgets — CPU, Thermal, GPU, Memory, Network, Storage, Power and System — to place on the desktop or in a panel.
@@ -161,6 +165,8 @@ argon-control-center
 
 | Option | Description |
 |---|---|
+| `--gui` | Open the graphical interface even when no display is detected |
+| `--tui` | Open the terminal interface even inside a graphical session |
 | `--status`, `-s` | Print telemetry, detected hardware, power events and the current overclock, then exit |
 | `--json` | Print a one-line JSON snapshot (CPU, temperature, fan, memory, disks, network, GPU, power flags, system) for scripts and widgets |
 | `--doctor` | Report which hardware interfaces and tools are available to the current user, and how to enable the missing ones |
@@ -200,6 +206,27 @@ argon-control-center --stress 180
 ```
 
 Each page saves only its own settings: saving hardware interfaces never writes overclock values, and saving an overclock never changes interfaces.
+
+## Terminal interface
+
+Without a graphical session (neither `WAYLAND_DISPLAY` nor `DISPLAY` set) and when started from a terminal, `argon-control-center` opens a terminal interface instead of the window — useful over SSH or on a Pi without a desktop. Use `--tui` to open it inside a desktop session, or `--gui` to force the window.
+
+```text
+╭ cpu ──────────────────────────────╮╭ mem ──────────────────────────────╮
+│total  ■■■■■■■■■■············  8.2% ││mem    ■■■■■■■■·········· 2.1/7.6G │
+│cpu0   ■■■■··················  3.1% ││swap   ■················· 271/3902M│
+│clock  1800 MHz  ondemand          ││/      ■■················  16/226G │
+│ ▁▃▅▆██▁▂▄▆▇█▂▄▅▇█▁▃▅▆██           │╰───────────────────────────────────╯
+╰───────────────────────────────────╯╭ argon ────────────────────────────╮
+                                     │temp   ■■■■■■■■■■■·······  53.6 °C │
+                                     │5V     OK                          │
+                                     ╰───────────────────────────────────╯
+ Pi 4 · BCM2711 · 8 GB · Argon ONE (Pi 4) · up 4h 12m · load 0.52   q quit · ? help
+```
+
+It is read-only and refreshes every second; meters are filled from left to right (0 to 100 %) with a green, amber and red gradient. Press `q` or `Esc` to quit and `?` for help. Use the graphical interface to change settings.
+
+The command-line reference is available as a manual page: `man argon-control-center`.
 
 ## Desktop widgets
 
@@ -361,11 +388,13 @@ src/
   doctor.rs          hardware access self-check
   snapshot.rs        one-shot JSON snapshot (--json) for widgets and scripts
   help.rs            in-app help content (English and Portuguese)
+  tui.rs             terminal interface (ratatui)
   pinout.rs          GPIO pin-out diagram rendering and pin positions
   power.rs           5 V supply monitoring
   stability.rs       CPU stability test
   tryboot.rs         trial boot for firmware overclocking
 assets/              pin-out diagram and asset credits
+docs/                manual page (argon-control-center.1)
 packaging/           Debian, RPM and Arch packaging, udev rules, permission setup
   plasma/            Plasma 6 widgets; shared components in common/, assembled by stage.sh
 scripts/             install, version bump and release notes helpers

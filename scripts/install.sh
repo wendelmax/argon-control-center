@@ -16,6 +16,7 @@ WIDGET_DIR="$PREFIX/share/plasma/plasmoids"
 if [[ "${1:-}" == "--uninstall" ]]; then
     rm -f "$BIN_DIR/$BIN_NAME" "$APP_DIR/$BIN_NAME.desktop"
     rm -rf "$WIDGET_DIR"/org.argon.controlcenter.*
+    rm -f "$PREFIX/share/man/man1/argon-control-center.1.gz"
     command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
     echo "Removed: $BIN_DIR/$BIN_NAME, $APP_DIR/$BIN_NAME.desktop"
     exit 0
@@ -35,6 +36,10 @@ install -d "$APP_DIR"
 sed "s|^Exec=.*|Exec=$BIN_DIR/$BIN_NAME|" "$BIN_NAME.desktop" > "$APP_DIR/$BIN_NAME.desktop"
 chmod 644 "$APP_DIR/$BIN_NAME.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
+
+# Manual page (man argon-control-center)
+install -d "$PREFIX/share/man/man1"
+gzip -9n -c docs/argon-control-center.1 > "$PREFIX/share/man/man1/argon-control-center.1.gz"
 
 # Plasma 6 desktop widgets (Add Widgets > "Argon")
 sh packaging/plasma/stage.sh "$WIDGET_DIR"
