@@ -227,9 +227,67 @@ pub fn serialize_fan_curve(points: &[FanCurvePoint], label: &str) -> String {
     out
 }
 
+/// I2C bus of the Argon fan controller (MCU at 0x1a). It only exists with
+/// `dtparam=i2c_arm=on` in config.txt.
+pub const ARGON_I2C_BUS: &str = "/dev/i2c-1";
+
+const FAN_BUS_OFF: &str =
+    "I2C is off, so the Argon fan controller cannot be reached. Use Enable I2C on the Fan page.";
+
+/// True when the Argon fan controller's I2C bus exists.
+pub fn fan_bus_available() -> bool {
+    Path::new(ARGON_I2C_BUS).exists()
+}
+
+/// Whether the fan bus matters here: an Argon case or the Argon daemon is present.
+pub fn fan_bus_expected() -> bool {
+    crate::board::current().case != crate::board::ArgonCase::None
+        || Path::new("/etc/argon").exists()
+}
+
 pub fn save_fan_curve(path: &str, points: &[FanCurvePoint], label: &str) -> Result<String, String> {
     let content = serialize_fan_curve(points, label);
-    write_privileged_file(path, &content, Some("systemctl restart argononed.service"))
+    let saved = write_privileged_file(path, &content, Some("systemctl restart argononed.service"))?;
+    if fan_bus_available() {
+        Ok(saved)
+    } else {
+        Err(format!("{path} saved, but {FAN_BUS_OFF}"))
+    }
+}
+
+/// Enables the I2C bus now and at every boot, then restarts argononed so it opens the bus.
+/// config.txt gets `dtparam=i2c_arm=on` (previous file kept as config.txt.argoncc.bak).
+pub fn enable_fan_bus() -> Result<String, String> {
+    let cfg = crate::overclock::get_boot_config_path();
+    let bus = ARGON_I2C_BUS;
+    let script = format!(
+        r#"set -e
+{edit}
+if command -v dtparam >/dev/null 2>&1; then dtparam i2c_arm=on || true; fi
+modprobe i2c-dev 2>/dev/null || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e {bus} ] && break; sleep 0.2; done
+systemctl try-restart argononed.service 2>/dev/null || true
+if [ -e {bus} ]; then echo "I2C enabled ({bus}); argononed restarted"; else echo "I2C enabled in $cfg; reboot to apply"; fi
+"#,
+        edit = enable_i2c_config_script(cfg),
+    );
+    run_root_script(&script).map(|out| out.trim().to_string())
+}
+
+/// Shell commands that make `cfg` contain `dtparam=i2c_arm=on`: uncomment it, or append it
+/// under `[all]`. The file is backed up first and left alone when I2C is already enabled.
+fn enable_i2c_config_script(cfg: &str) -> String {
+    format!(
+        r#"cfg='{cfg}'
+if ! grep -qE '^[[:space:]]*dtparam=i2c_arm=(on|1)[[:space:]]*$' "$cfg"; then
+    cp -p "$cfg" "$cfg.argoncc.bak"
+    if grep -qE '^[[:space:]]*#[[:space:]]*dtparam=i2c_arm=(on|1)' "$cfg"; then
+        sed -i -E 's/^[[:space:]]*#[[:space:]]*dtparam=i2c_arm=(on|1).*/dtparam=i2c_arm=on/' "$cfg"
+    else
+        printf '\n[all]\ndtparam=i2c_arm=on\n' >> "$cfg"
+    fi
+fi"#
+    )
 }
 
 /// Evaluates the Argon step-function fan curve for a given temperature (`argononed.py` `get_fanspeed` logic).
@@ -257,6 +315,9 @@ pub fn evaluate_fan_speed(temp_c: f32, points: &[FanCurvePoint]) -> u8 {
 
 /// Sets the fan speed immediately on the Argon MCU via `/etc/argon/argonregister.py` or I2C.
 pub fn set_immediate_fan_speed(speed_pct: u8) -> Result<String, String> {
+    if !fan_bus_available() {
+        return Err(FAN_BUS_OFF.to_string());
+    }
     let clamped = speed_pct.min(100);
     let py_cmd = format!(
         "python3 -c 'import sys; sys.path.append(\"/etc/argon\"); from argonregister import *; b=argonregister_initializebusobj(); argonregister_setfanspeed(b, {clamped})'"
@@ -403,6 +464,38 @@ pub fn reset_argon_ir_power_button() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run_i2c_edit(name: &str, content: &str) -> (String, bool) {
+        let dir = std::env::temp_dir().join(format!("argoncc-i2c-{}-{name}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.txt");
+        fs::write(&cfg, content).unwrap();
+        let status = Command::new("bash")
+            .arg("-c")
+            .arg(enable_i2c_config_script(cfg.to_str().unwrap()))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let out = fs::read_to_string(&cfg).unwrap();
+        let backup = dir.join("config.txt.argoncc.bak").exists();
+        fs::remove_dir_all(&dir).ok();
+        (out, backup)
+    }
+
+    #[test]
+    fn enabling_i2c_uncomments_appends_or_keeps() {
+        let (out, backup) = run_i2c_edit("commented", "#dtparam=i2c_arm=on\ndtparam=audio=on\n");
+        assert_eq!(out, "dtparam=i2c_arm=on\ndtparam=audio=on\n");
+        assert!(backup);
+
+        let (out, backup) = run_i2c_edit("missing", "dtparam=audio=on\n");
+        assert_eq!(out, "dtparam=audio=on\n\n[all]\ndtparam=i2c_arm=on\n");
+        assert!(backup);
+
+        let (out, backup) = run_i2c_edit("enabled", "dtparam=i2c_arm=on\n");
+        assert_eq!(out, "dtparam=i2c_arm=on\n");
+        assert!(!backup);
+    }
 
     #[test]
     fn test_parse_and_evaluate_fan_curve() {

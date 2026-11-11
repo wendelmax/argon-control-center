@@ -32,6 +32,8 @@ pub struct Snapshot {
     pub gpu: Gpu,
     pub power: Power,
     pub daemon_active: bool,
+    /// False when the Argon fan controller's I2C bus is missing (fan not controlled).
+    pub fan_bus: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -348,6 +350,7 @@ pub fn take() -> Snapshot {
             problem: undervoltage_now || fw_problem,
         },
         daemon_active,
+        fan_bus: crate::argon::fan_bus_available() || !crate::argon::fan_bus_expected(),
     };
 
     let cache = Cache {

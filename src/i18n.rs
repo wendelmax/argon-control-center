@@ -372,6 +372,11 @@ pub struct Texts {
     pub btn_unlock_gpio_tip: &'static str,
     pub chk_sim_pulses: &'static str,
     pub chk_sim_pulses_tip: &'static str,
+    pub fan_bus_off: &'static str,
+    pub fan_bus_off_body: &'static str,
+    pub btn_enable_i2c: &'static str,
+    pub btn_enable_i2c_tip: &'static str,
+    pub footer_i2c_off: &'static str,
     pub gpio: &'static GpioTexts,
 }
 
@@ -933,6 +938,11 @@ pub const TEXTS_PT: Texts = Texts {
     chk_sim_pulses: "Pulsos de teste",
     chk_sim_pulses_tip: "Simula trens de pulso nos barramentos I2C (GPIO 2/3), Botão Power Argon (GPIO 4) e IR (GPIO 23) para testar o analisador lógico.",
     gpio: &GPIO_PT,
+    fan_bus_off: "I2C desligado: a ventoinha não está sendo controlada",
+    fan_bus_off_body: "A controladora da ventoinha Argon fica no barramento I2C, que está desativado no config.txt. A curva e a rotação manual são salvas, mas não têm efeito até o I2C ser ativado.",
+    btn_enable_i2c: "Ativar I2C",
+    btn_enable_i2c_tip: "Liga o barramento I2C agora, adiciona dtparam=i2c_arm=on ao config.txt (o arquivo anterior fica em config.txt.argoncc.bak) e reinicia o argononed.",
+    footer_i2c_off: "Ventoinha: I2C desligado",
 };
 
 pub const TEXTS_EN: Texts = Texts {
@@ -1279,6 +1289,11 @@ pub const TEXTS_EN: Texts = Texts {
     chk_sim_pulses: "Test pulses",
     chk_sim_pulses_tip: "Simulates pulse trains on I2C (GPIO 2/3), Argon Power Button (GPIO 4), and IR (GPIO 23) to test the logic analyzer.",
     gpio: &GPIO_EN,
+    fan_bus_off: "I2C is off: the fan is not being controlled",
+    fan_bus_off_body: "The Argon fan controller is on the I2C bus, which is disabled in config.txt. The curve and manual speed are saved but have no effect until I2C is enabled.",
+    btn_enable_i2c: "Enable I2C",
+    btn_enable_i2c_tip: "Turns the I2C bus on now, adds dtparam=i2c_arm=on to config.txt (previous file kept as config.txt.argoncc.bak) and restarts argononed.",
+    footer_i2c_off: "Fan: I2C off",
 };
 
 pub fn texts(lang: Language) -> &'static Texts {
