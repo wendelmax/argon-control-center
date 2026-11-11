@@ -16,6 +16,9 @@ pub struct Check {
     pub fix: &'static str,
 }
 
+/// The bus device only exists when I2C is enabled in the firmware.
+const I2C_OFF: &str = "enable I2C in Hardware (dtparam=i2c_arm=on in config.txt) and reboot";
+
 const SETUP: &str = "sudo /usr/lib/argon-control-center/setup-permissions.sh $USER (or GPIO Lab > Unlock hardware), then log in again";
 
 /// Read + write access for the current user.
@@ -39,7 +42,11 @@ pub fn run() -> Vec<Check> {
             name: "I2C bus (/dev/i2c-1)",
             enables: "case detection, fan override, I2C console",
             ok: rw("/dev/i2c-1"),
-            fix: SETUP,
+            fix: if Path::new("/dev/i2c-1").exists() {
+                SETUP
+            } else {
+                I2C_OFF
+            },
         },
         Check {
             name: "GPIO (/dev/gpiochip0)",

@@ -8,6 +8,9 @@ Release notes on GitHub are generated from the section matching the tag.
 
 ## [Unreleased]
 
+### Fixed
+- `--doctor` tells a disabled I2C bus (enable it in Hardware and reboot) apart from missing permissions.
+
 ## [0.3.0] - 2026-11-11
 
 ### Added
