@@ -6,7 +6,7 @@
 #   scripts/bump-version.sh major    # 0.2.0 -> 1.0.0  breaking changes
 #   scripts/bump-version.sh --tag    # tag the current commit with the Cargo.toml version
 #
-# A bump updates Cargo.toml, Cargo.lock, the RPM spec, the PKGBUILD, the AppStream metadata, the manual page and turns the
+# A bump updates Cargo.toml, Cargo.lock, the RPM spec, the PKGBUILD, the AppStream metadata, the manual page, the Plasma widgets and turns the
 # [Unreleased] section of CHANGELOG.md into the new version. Commit it through a PR; once it
 # is merged, run --tag on main and push the tag to publish the release.
 set -euo pipefail
@@ -73,6 +73,11 @@ sed -i -e "s/^pkgver=.*/pkgver=$NEW/" -e "s/^pkgrel=.*/pkgrel=1/" "$PKGBUILD"
 
 # AppStream metadata: newest release first.
 sed -i "s#^  <releases>\$#  <releases>\\n    <release version=\"$NEW\" date=\"$TODAY\">\\n      <url type=\"details\">$REPO_URL/releases/tag/v$NEW</url>\\n    </release>#" "$METAINFO"
+
+# Plasma widgets: same version as the application.
+for meta in packaging/plasma/org.argon.controlcenter.*/metadata.json; do
+    sed -i -E "s/(\"Version\": \")[^\"]*(\")/\1$NEW\2/" "$meta"
+done
 
 # Manual page header: date and version.
 MAN_DATE="$(LC_ALL=C date '+%B %Y')"
