@@ -3,8 +3,8 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Raspberry Pi & Argon40 hardware control center
 License:        MIT
-URL:            https://github.com/wendelmax/argon-config-rs
-Source0:        %{url}/archive/v%{version}/argon-config-rs-%{version}.tar.gz
+URL:            https://github.com/wendelmax/argon-control-center
+Source0:        %{url}/archive/v%{version}/argon-control-center-%{version}.tar.gz
 Source1:        argon-control-center.sysusers
 
 BuildRequires:  cargo
@@ -35,7 +35,7 @@ control. English and Brazilian Portuguese UI. Installs udev rules and the
 i2c/gpio groups so members get hardware access without setuid binaries.
 
 %prep
-%autosetup -n argon-config-rs-%{version}
+%autosetup -n argon-control-center-%{version}
 
 %build
 cargo build --release --locked

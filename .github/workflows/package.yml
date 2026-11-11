@@ -64,7 +64,7 @@ jobs:
           VERSION=$(rpmspec -q --qf '%{version}\n' packaging/rpm/argon-control-center.spec | head -1)
           rpmdev-setuptree
           git config --global --add safe.directory "$PWD"
-          git archive --prefix="argon-config-rs-$VERSION/" -o ~/rpmbuild/SOURCES/argon-config-rs-$VERSION.tar.gz HEAD
+          git archive --prefix="argon-control-center-$VERSION/" -o ~/rpmbuild/SOURCES/argon-control-center-$VERSION.tar.gz HEAD
           cp packaging/common/argon-control-center.sysusers ~/rpmbuild/SOURCES/
       - name: Build dependencies
         run: dnf builddep -y packaging/rpm/argon-control-center.spec
@@ -98,7 +98,7 @@ jobs:
           WORK=/home/builder/pkg
           mkdir -p $WORK
           cp packaging/arch/PKGBUILD packaging/arch/argon-control-center.install $WORK/
-          git archive --prefix="argon-config-rs-$VERSION/" -o "$WORK/argon-config-rs-$VERSION.tar.gz" HEAD
+          git archive --prefix="argon-control-center-$VERSION/" -o "$WORK/argon-control-center-$VERSION.tar.gz" HEAD
           chown -R builder $WORK
           cd $WORK && su builder -c "makepkg --noconfirm"
       - name: Install and smoke test

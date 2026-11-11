@@ -13,7 +13,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-REPO_URL="https://github.com/wendelmax/argon-config-rs"
+REPO_URL="https://github.com/wendelmax/argon-control-center"
 SPEC=packaging/rpm/argon-control-center.spec
 PKGBUILD=packaging/arch/PKGBUILD
 

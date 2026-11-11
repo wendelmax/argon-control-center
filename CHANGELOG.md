@@ -67,5 +67,5 @@ First public release.
 - Privileged files are written through Polkit with the content passed on standard input, replaced atomically, and the previous version is kept as `<file>.argoncc.bak`.
 - Hardware access is granted through group membership and udev rules; no setuid binaries or world-writable device nodes are used.
 
-[Unreleased]: https://github.com/wendelmax/argon-config-rs/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/wendelmax/argon-config-rs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wendelmax/argon-control-center/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/wendelmax/argon-control-center/releases/tag/v0.1.0

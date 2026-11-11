@@ -5,7 +5,7 @@ edition = "2021"
 description = "Desktop control center for Raspberry Pi in Argon40 cases: fan curve, telemetry, board-aware overclocking, GPIO lab"
 authors = ["wendelmax"]
 license = "MIT"
-repository = "https://github.com/wendelmax/argon-config-rs"
+repository = "https://github.com/wendelmax/argon-control-center"
 readme = "README.md"
 
 [dependencies]

@@ -22,8 +22,8 @@ strip "$STAGE/usr/bin/argon-control-center" 2>/dev/null || true
 # Debian machine-readable copyright file
 {
     echo "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
-    echo "Upstream-Name: argon-config-rs"
-    echo "Source: https://github.com/wendelmax/argon-config-rs"
+    echo "Upstream-Name: argon-control-center"
+    echo "Source: https://github.com/wendelmax/argon-control-center"
     echo
     echo "Files: *"
     echo "Copyright: 2026 wendelmax"

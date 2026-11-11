@@ -6,14 +6,14 @@
 
 Monitor the system, tune the fan curve, overclock safely and manage hardware features from one desktop application.
 
-[![CI](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/wendelmax/argon-config-rs/actions/workflows/ci.yml)
-[![Packages](https://github.com/wendelmax/argon-config-rs/actions/workflows/package.yml/badge.svg)](https://github.com/wendelmax/argon-config-rs/actions/workflows/package.yml)
-[![Release](https://img.shields.io/github/v/release/wendelmax/argon-config-rs?sort=semver)](https://github.com/wendelmax/argon-config-rs/releases)
+[![CI](https://github.com/wendelmax/argon-control-center/actions/workflows/ci.yml/badge.svg)](https://github.com/wendelmax/argon-control-center/actions/workflows/ci.yml)
+[![Packages](https://github.com/wendelmax/argon-control-center/actions/workflows/package.yml/badge.svg)](https://github.com/wendelmax/argon-control-center/actions/workflows/package.yml)
+[![Release](https://img.shields.io/github/v/release/wendelmax/argon-control-center?sort=semver)](https://github.com/wendelmax/argon-control-center/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Linux%20arm64%20%7C%20x86__64-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 
-[Installation](#installation) · [Usage](#usage) · [Documentation](#configuration) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/wendelmax/argon-config-rs/releases)
+[Installation](#installation) · [Usage](#usage) · [Documentation](#configuration) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/wendelmax/argon-control-center/releases)
 
 </div>
 
@@ -119,7 +119,7 @@ Packaged for Debian, Ubuntu, Raspberry Pi OS, Armbian, Fedora and Arch Linux. Re
 
 ### Packages
 
-Download the package for your distribution from the [latest release](https://github.com/wendelmax/argon-config-rs/releases/latest).
+Download the package for your distribution from the [latest release](https://github.com/wendelmax/argon-control-center/releases/latest).
 
 | Distribution | Command |
 |---|---|
@@ -266,8 +266,8 @@ Optional runtime tools: `pkexec` (Polkit), `i2c-tools`, `gpiod` / `libgpiod-util
 ### Build and install
 
 ```sh
-git clone https://github.com/wendelmax/argon-config-rs.git
-cd argon-config-rs
+git clone https://github.com/wendelmax/argon-control-center.git
+cd argon-control-center
 mise install          # install the pinned Rust toolchain
 mise run install      # build and install to ~/.local
 ```
@@ -359,7 +359,7 @@ Overclocking and over-voltage settings can make a system unstable. Use the trial
 
 Stopping `argononed` disables the automatic fan curve and the case power button.
 
-To report a security issue, please use [GitHub private vulnerability reporting](https://github.com/wendelmax/argon-config-rs/security/advisories/new) instead of a public issue.
+To report a security issue, please use [GitHub private vulnerability reporting](https://github.com/wendelmax/argon-control-center/security/advisories/new) instead of a public issue.
 
 ## License
 

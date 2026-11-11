@@ -13,7 +13,7 @@ set -euo pipefail
 TAG="${1:?usage: release-notes.sh <tag> [dist-dir]}"
 DIST="${2:-dist}"
 VERSION="${TAG#v}"
-REPO_URL="https://github.com/${GITHUB_REPOSITORY:-wendelmax/argon-config-rs}"
+REPO_URL="https://github.com/${GITHUB_REPOSITORY:-wendelmax/argon-control-center}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
