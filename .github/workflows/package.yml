@@ -99,7 +99,8 @@ jobs:
           cp packaging/arch/PKGBUILD packaging/arch/argon-control-center.install $WORK/
           git archive --prefix="argon-control-center-$VERSION/" -o "$WORK/argon-control-center-$VERSION.tar.gz" HEAD
           chown -R builder $WORK
-          cd $WORK && su builder -c "makepkg --noconfirm"
+          # Arch Linux ARM defaults to .pkg.tar.xz; release assets use .pkg.tar.zst.
+          cd $WORK && su builder -c "PKGEXT=.pkg.tar.zst makepkg --noconfirm"
       - name: Install and smoke test
         run: |
           pacman -U --noconfirm /home/builder/pkg/argon-control-center-*.pkg.tar.zst
